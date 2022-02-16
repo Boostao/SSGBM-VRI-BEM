@@ -13,7 +13,7 @@ merge_ccb_on_vri <- function(vri_bem, ccb) {
   st_agr(ccb) <- "constant"
   st_agr(vri_bem) <- "constant"
   # TODO merge union
-  return(st_as_sf(st_intersection(vri_bem, ccb)))
+  return(st_intersection(vri_bem, ccb))
 
   #TODO the more I think about it , the more  simple intersection is probably best
   # why would we want the polygon were we have information for ccb but not vri

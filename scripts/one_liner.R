@@ -1,15 +1,18 @@
 devtools::load_all()
 
+aoi_filter <- "POLYGON ((1023955 988730.2, 1065018 988730.2, 1065018 1016988, 1023955 1016988, 1023955 988730.2))"
+
 unique_eco <-  create_unique_ecosystem_from_scratch(dsn = "../SSGBM-VRI-BEM-data/CodeWithUs.gdb",
                                      vri_dsn = "../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY",
                                      bem_dsn = "../SSGBM-VRI-BEM-data/BEM_VRI",
-                                     wkt_filter = "POLYGON ((941827.7 932215.1, 1065018 932215.1, 1065018 1016988, 941827.7 1016988, 941827.7 932215.1))",
-                                     n_iterations = 9)
+                                     wkt_filter = aoi_filter,
+                                     n_iterations = 1,
+                                     use_ifelse = FALSE)
 
 unique_eco_2 <- create_unique_ecosystem_from_scratch(dsn = "../SSGBM-VRI-BEM-data/CodeWithUs.gdb",
                                                                     vri_dsn = "../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY",
                                                                     bem_dsn = "../SSGBM-VRI-BEM-data/BEM_VRI",
-                                                                    wkt_filter = "POLYGON ((941827.7 932215.1, 1065018 932215.1, 1065018 1016988, 941827.7 1016988, 941827.7 932215.1))",
+                                                                    wkt_filter = aoi_filter,
                                                                     n_iterations = 1)
 
 
@@ -18,8 +21,8 @@ rrm_output <-  create_RRM_ecosystem_from_scratch(dsn = "../SSGBM-VRI-BEM-data/Co
                                                  bem_dsn = "../SSGBM-VRI-BEM-data/BEM_VRI",
                                                  elevation_dsn = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif",
                                                  most_recent_harvest_year = 2020,
-                                                 wkt_filter = "POLYGON ((941827.7 932215.1, 1065018 932215.1, 1065018 1016988, 941827.7 1016988, 941827.7 932215.1))",
-                                                 n_iterations = 9)
+                                                 wkt_filter = aoi_filter,
+                                                 n_iterations = 1)
 
 
 vri <- read_vri("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY")
@@ -199,14 +202,12 @@ v_rast <- rast("../vri.tif")
 b_rast <- rast("../bem.tif")
 elev_rast <- rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
 terrain_raster <- terrain(elev_rast, v = c("slope", "aspect"), unit = "radians")
-extend(terrain_raster, v_rast)
 add(v_rast) <- elev_rast
 add(v_rast) <- terrain_raster
-
-vri_bem <- setDT(extract(v_rast, vect("POLYGON ((941827.7 932215.1, 982891.1 932215.1, 982891.1 960472.6, 941827.7 960472.6, 941827.7 932215.1))"), cells = TRUE, xy = TRUE))
-
 rivers <- read_rivers("../SSGBM-VRI-BEM-data/CodeWithUs.gdb")
 wetlands <- read_wetlands("../SSGBM-VRI-BEM-data/CodeWithUs.gdb", wkt_filter = "POLYGON ((941827.7 932215.1, 982891.1 932215.1, 982891.1 960472.6, 941827.7 960472.6, 941827.7 932215.1))")
+
+vri_bem <- setDT(extract(v_rast, vect("POLYGON ((941827.7 932215.1, 982891.1 932215.1, 982891.1 960472.6, 941827.7 960472.6, 941827.7 932215.1))"), cells = TRUE, xy = TRUE))
 
 # merge rivers
 river_intersect <- cells(v_rast, vect(rivers))[, 2]
@@ -221,3 +222,6 @@ set(vri_bem, i = match(vri_bem$cell, wet_intersect), j = "wl_pct", value = !is.n
 
 
 vri_bem <- merge_bem_on_vri.data.table(vri, bem)
+
+
+cells(b_rast$TEIS_ID, 15729)
