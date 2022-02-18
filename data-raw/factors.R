@@ -4,38 +4,40 @@
 # CROWN_CLOSURE, LAND_COVER_CLASS_CD_1, EST_COVERAGE_PCT_1, LINE_5_VEGETATION_COVER,
 # HARVEST_DATE, PROJ_AGE_1
 
-# BCLCS_LEVEL_1 ----
-bclcs_level_1 <- data.table(value = c("V", "N", "U"))
-bclcs_level_1[, factor := 1:.N]
-usethis::use_data(bclcs_level_1, overwrite = TRUE)
+library(data.table)
 
-# BCLCS_LEVEL_2 ----
-bclcs_level_2 <- data.table(value = c("T", "N", "L", "W"))
-bclcs_level_2[, factor := 1:.N]
-usethis::use_data(bclcs_level_2, overwrite = TRUE)
+# BCLCS_LV_1 ----
+BCLCS_LV_1 <- data.table(value = c("V", "N", "U"))
+BCLCS_LV_1[, factor := 1:.N]
+usethis::use_data(BCLCS_LV_1, overwrite = TRUE)
 
-# BCLCS_LEVEL_3 ----
-bclcs_level_3 <- data.table(value = c("W", "U", "A"))
-bclcs_level_3[, factor := 1:.N]
-usethis::use_data(bclcs_level_3, overwrite = TRUE)
+# BCLCS_LV_2 ----
+BCLCS_LV_2 <- data.table(value = c("T", "N", "L", "W"))
+BCLCS_LV_2[, factor := 1:.N]
+usethis::use_data(BCLCS_LV_2, overwrite = TRUE)
+
+# BCLCS_LV_3 ----
+BCLCS_LV_3 <- data.table(value = c("W", "U", "A"))
+BCLCS_LV_3[, factor := 1:.N]
+usethis::use_data(BCLCS_LV_3, overwrite = TRUE)
 
 
-# BCLCS_LEVEL_4 ----
-bclcs_level_4 <- data.table(value = c("TC", "TB", "TM", "ST", "SL", "HE", "HF", "HG", "BY",
+# BCLCS_LV_4 ----
+BCLCS_LV_4 <- data.table(value = c("TC", "TB", "TM", "ST", "SL", "HE", "HF", "HG", "BY",
                                       "BM", "BL", "SI", "RO", "EL"))
-bclcs_level_4[, factor := 1:.N]
-usethis::use_data(bclcs_level_4, overwrite = TRUE)
+BCLCS_LV_4[, factor := 1:.N]
+usethis::use_data(BCLCS_LV_4, overwrite = TRUE)
 
-# BCLCS_LEVEL_5 ----
-bclcs_level_5 <- data.table(value = c("DE", "OP", "SP", "CL", "OP", "GL", "PN", "BR", "TA",
+# BCLCS_LV_5 ----
+BCLCS_LV_5 <- data.table(value = c("DE", "OP", "SP", "CL", "OP", "GL", "PN", "BR", "TA",
                                       "BI", "MZ", "LB", "RS", "ES", "LS", "RM", "BE", "LL",
                                       "BU", "RZ", "MU", "CB", "MN", "GP", "TZ", "RN", "UR",
                                       "AP", "MI", "OT", "LA", "RE", "RI", "OC"))
-bclcs_level_5[, factor := 1:.N]
-usethis::use_data(bclcs_level_5, overwrite = TRUE)
+BCLCS_LV_5[, factor := 1:.N]
+usethis::use_data(BCLCS_LV_5, overwrite = TRUE)
 
-# SPECIES_CD_1 ----
-species_cd_1 <- data.table(value = c("AC", "AT", "B", "BL", "BA", "BG", "CW", "DR", "E", "EP",
+# SPEC_CD_1 ----
+SPEC_CD_1 <- data.table(value = c("AC", "AT", "B", "BL", "BA", "BG", "CW", "DR", "E", "EP",
                                      "EA", "FD", "H", "HW", "HM", "L", "LA", "LT", "LW", "MB",
                                      "PF", "PL", "PW", "PA", "PY", "PJ", "S", "SB", "SE", "SS",
                                      "SW", "YC", "DM", "R", "EW", "Cw", "Yc",
@@ -52,42 +54,42 @@ species_cd_1 <- data.table(value = c("AC", "AT", "B", "BL", "BA", "BG", "CW", "D
                                      "Oa", "Ob", "Oc", "Od", "Oe", "Of", "Og", "Oh", "Oi",
                                      "Pm", "Pr", "Ps", "S", "Sn"))
 
-species_cd_1[, factor := 1:.N]
-usethis::use_data(species_cd_1, overwrite = TRUE)
+SPEC_CD_1[, factor := 1:.N]
+usethis::use_data(SPEC_CD_1, overwrite = TRUE)
 
-# SPECIES_CD_2 ----
-species_cd_2 <- copy(species_cd_1)
-usethis::use_data(species_cd_2, overwrite = TRUE)
+# SPEC_CD_2 ----
+SPEC_CD_2 <- copy(SPEC_CD_1)
+usethis::use_data(SPEC_CD_2, overwrite = TRUE)
 
-# SPECIES_CD_3 ----
-species_cd_3 <- copy(species_cd_1)
-usethis::use_data(species_cd_3, overwrite = TRUE)
+# SPEC_CD_3 ----
+SPEC_CD_3 <- copy(SPEC_CD_1)
+usethis::use_data(SPEC_CD_3, overwrite = TRUE)
 
-# SPECIES_CD_4 ----
-species_cd_4 <- copy(species_cd_1)
-usethis::use_data(species_cd_4, overwrite = TRUE)
+# SPEC_CD_4 ----
+SPEC_CD_4 <- copy(SPEC_CD_1)
+usethis::use_data(SPEC_CD_4, overwrite = TRUE)
 
-# SPECIES_CD_5 ----
-species_cd_5 <- copy(species_cd_1)
-usethis::use_data(species_cd_5, overwrite = TRUE)
+# SPEC_CD_5 ----
+SPEC_CD_5 <- copy(SPEC_CD_1)
+usethis::use_data(SPEC_CD_5, overwrite = TRUE)
 
-# SPECIES_CD_6 ----
-species_cd_6 <- copy(species_cd_1)
-usethis::use_data(species_cd_6, overwrite = TRUE)
+# SPEC_CD_6 ----
+SPEC_CD_6 <- copy(SPEC_CD_1)
+usethis::use_data(SPEC_CD_6, overwrite = TRUE)
 
-# LAND_COVER_CLASS_CD_1 ----
-land_cover_class_cd_1 <- data.table(value = c("TB", "TC", "TM", "ST", "SL", "HE", "HF", "HG",
+# LAND_CD_1 ----
+LAND_CD_1 <- data.table(value = c("TB", "TC", "TM", "ST", "SL", "HE", "HF", "HG",
                                               "BY", "BM", "BL", "SI", "GL", "PN", "RO, BR",
                                               "TA", "BI", "MZ", "LB", "EL", "RS", "ES", "LS",
                                               "RM", "BE", "LL", "BU", "RZ", "MU", "CB", "MN", "GP",
                                               "TZ", "RN", "UR", "AP", "MI", "OT", "LA", "RE", "RI",
                                               "A", "OC"))
-land_cover_class_cd_1[, factor := 1:.N]
-usethis::use_data(land_cover_class_cd_1, overwrite = TRUE)
+LAND_CD_1[, factor := 1:.N]
+usethis::use_data(LAND_CD_1, overwrite = TRUE)
 
-# LINE_5_VEGETATION_COVER ----
-land_cover_class_cd_1 <- data.table(value = c("sh", "he", "by"))
-land_cover_class_cd_1[, factor := 1:.N]
-usethis::use_data(land_cover_class_cd_1, overwrite = TRUE)
+# LBL_VEGCOV ----
+LBL_VEGCOV <- data.table(value = c("sh", "he", "by"))
+LBL_VEGCOV[, factor := 1:.N]
+usethis::use_data(LBL_VEGCOV, overwrite = TRUE)
 
 
