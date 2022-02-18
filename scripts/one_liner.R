@@ -248,15 +248,18 @@ gdal_rasterize(src_datasource = "../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY",
                te = c(extent[1], extent[3], extent[2], extent[4]),
                tr = res(elev_rast))
 
-gdal_rasterize(src_datasource = "../SSGBM-VRI-BEM-data/CodeWithUs.gdb",
-               a = "GEOMETRY_Area",
-               sql = "SELECT  GEOMETRY_Area FROM FWA_WETLANDS_POLY",
+gdalUtils::gdal_rasterize(src_datasource = "../SSGBM-VRI-BEM-data/vri_bcgov.shp",
+               a = "TEST",
+               sql = "SELECT  CAST(HRVSTDT as integer(3)) as TEST FROM vri_bcgov",
                dst_filename = "../SSGBM-VRI-BEM-data/wetlands.tif",
                a_srs =  crs(elev_rast, proj = T),
                te = c(extent[1], extent[3], extent[2], extent[4]),
                tr = res(elev_rast))
 w_r <- rast( "../SSGBM-VRI-BEM-data/wetlands.tif")
-plot(w_r)
+which_lines <- which(values(w_r)[,1] !=0)
+values(w_r)[which_lines,]
+   plot(w_r)
+
 "../SSGBM-VRI-BEM-data/CodeWithUs.gdb"
 FWA_WETLANDS_POLY
 GEOMETRY_Area

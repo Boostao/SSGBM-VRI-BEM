@@ -52,7 +52,7 @@ SPEC_CD_1 <- data.table(value = c("AC", "AT", "B", "BL", "BA", "BG", "CW", "DR",
                                      "Ua", "Ad", "Ee", "Es", "Ey", "Vs", "Yp", "Bb", "Bp",
                                      "Bm", " Bc", "Ld", "Me", "Mn", "Ms", "Qe", "Qw",
                                      "Oa", "Ob", "Oc", "Od", "Oe", "Of", "Og", "Oh", "Oi",
-                                     "Pm", "Pr", "Ps", "S", "Sn"))
+                                     "Pm", "Pr", "Ps", "Sn"))
 
 SPEC_CD_1[, factor := 1:.N]
 usethis::use_data(SPEC_CD_1, overwrite = TRUE)
