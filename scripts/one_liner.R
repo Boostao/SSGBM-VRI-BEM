@@ -336,3 +336,34 @@ write_sf(wet[ , "Shape"], "../SSGBM-VRI-BEM-data/test.shp")
 w <- st_read("../SSGBM-VRI-BEM-data/test.shp")
 w_r <- rast("../SSGBM-VRI-BEM-data/rast_wt_test.tif")
 plot(w_r)
+
+
+
+
+
+
+
+
+
+
+library(bcdata)
+library(bcmaps)
+library(sf)
+library(rvest)
+library(RPostgres)
+
+# Vegetation Resource Inventory (VRI) 2020
+url_vri <- bcdc_get_record("6ba30649-14cd-44ad-a11f-794feed39f40")$resource_df$url
+curl::curl_download(url_vri, file.path("./data-raw/cache", basename(url_vri)))
+# Load in postgis with psql;
+# CREATE DATABASE vribem;
+# \c vribem;
+# CREATE USER vribem PASSWORD 'vribem';
+# CREATE EXTENSION postgis;
+# CREATE EXTENSION postgis_raster;
+# ogr2ogr -overwrite -progress -f "PostgreSQL" PG:"host=localhost port=5432 dbname=vribem user=vribem password=vribem" --config OGR_ORGANIZE_POLYGONS CCW_INNER_JUST_AFTER_CW_OUTER -gt unlimited VEG_COMP_POLY_AND_LAYER_2020.gdb.zip
+
+# Consolidated Cutblocks (CCL) 2020
+url_ccl <- bcdc_get_record("b1b647a6-f271-42e0-9cd0-89ec24bce9f7")$resource_df$url[2]
+curl::curl_download(url_ccl, file.path("./data-raw/cache", basename(url_ccl)))
+
