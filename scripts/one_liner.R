@@ -260,6 +260,9 @@ which_lines <- which(values(w_r)[,1] !=0)
 values(w_r)[which_lines,]
    plot(w_r)
 
+
+vri_rast <- rasterize_vri("../SSGBM-VRI-BEM-data/vri_bcgov.shp", "../SSGBM-VRI-BEM-data/rast_vri_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = T)
+
 "../SSGBM-VRI-BEM-data/CodeWithUs.gdb"
 FWA_WETLANDS_POLY
 GEOMETRY_Area
@@ -274,7 +277,7 @@ gdalUtils::gdal_rasterize("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY",
 
 gdal_rasterize("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY/VEG_R1_PLY_polygon.shp",
                burn = 1,
-               where = '"OPEN_IND" = \'Y\'',
+               where = "\"OPEN_IND\" = 'Y'",
                dst_filename = "../SSGBM-VRI-BEM-data/temp_vri_OPEN_IND.tif",
                a_srs =  crs(elev_rast, proj = T),
                te = c(extent[1], extent[3], extent[2], extent[4]),
@@ -300,7 +303,7 @@ writeRaster(vri_r1 , "../SSGBM-VRI-BEM-data/temp_vri.tif")
 vri_r <- rast("../SSGBM-VRI-BEM-data/temp_vri.tif")
 plot(vri_r)
 plot(test)
-vri <- read_sf("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY/VEG_R1_PLY_polygon.shp")
+vri <- read_sf("../SSGBM-VRI-BEM-data/vri_bcgov.shp")
 
 
 gdal_rasterize("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY/VEG_R1_PLY_polygon.shp",

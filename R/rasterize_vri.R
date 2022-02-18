@@ -1,20 +1,30 @@
-# convert vri from vectors to raster
-
-# BCLCS_LEVEL_1, BCLCS_LEVEL_2, BCLCS_LEVEL_3, BCLCS_LEVEL_4, BCLCS_LEVEL_5,
-# SPECIES_CD_1, SPECIES_CD_2, SPECIES_CD_3, SPECIES_CD_4, SPECIES_CD_5, SPECIES_CD_6,
-# SPECIES_PCT_1, SPECIES_PCT_2, SPECIES_PCT_3, SPECIES_PCT_4, SPECIES_PCT_5, SPECIES_PCT_6,
-# CROWN_CLOSURE, LAND_COVER_CLASS_CD_1, EST_COVERAGE_PCT_1, LINE_5_VEGETATION_COVER,
-# HARVEST_DATE, PROJ_AGE_1
-
-# create raster for numeric attributes
-#library(gdalUtils)
-
-
-rasterize_vri <- function(src_datasource, dst_filename, layer, a_srs, te, tr, reference, verbose = TRUE) {
+#' Convert vri to raster
+#'
+#' Convert all attributes of interest of vri into raster layers
+#'
+#' @param src_datasource character, path of source file
+#' @param dst_filename character, path of destination file
+#' @param layer character, name of the layer of interest
+#' @param a_srs Character. (GDAL >= 1.8.0) Override the projection for the output file. If not specified, the projection of the input vector file will be used if available. If incompatible projections between input and output files, no attempt will be made to reproject features. The srs_def may be any of the usual GDAL/OGR forms, complete WKT, PROJ.4, EPSG:n or a file containing the WKT.
+#' @param te Numeric. c(xmin,ymin,xmax,ymax) (GDAL >= 1.8.0) set georeferenced extents. The values must be expressed in georeferenced units. If not specified, the extent of the output file will be the extent of the vector layers.
+#' @param tr Numeric. c(xres,yres) (GDAL >= 1.8.0) set target resolution. The values must be expressed in georeferenced units. Both must be positive values.
+#' @param reference character of SpatRaster, will be used as reference raster for extent, resolution and crs
+#' @param output_raster boolean, if TRUE, the resulting raster will be returned
+#' @param verbose boolean, if TRUE progression message will be printed
+#' @return SpatRaster if output_raster is TRUE, NULL otherwise
+#' @importFrom terra `add<-` crs ext rast writeRaster
+#' @importFrom gdalUtils gdal_rasterize
+#' @export
+rasterize_vri <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NULL, te = NULL, tr = NULL, reference = NULL, output_raster = FALSE, verbose = TRUE) {
 
   # if provided use parameters from reference raster
   if (!is.null(reference)) {
-    ref_raster <- rast(reference)
+    if (class(reference) == "character") {
+      ref_raster <- rast(reference)
+    }
+    else {
+      ref_raster <- reference
+    }
     a_srs <- crs(ref_raster, proj = T)
     extent <- ext(ref_raster)
     te <- c(extent[1], extent[3], extent[2], extent[4])
@@ -23,17 +33,17 @@ rasterize_vri <- function(src_datasource, dst_filename, layer, a_srs, te, tr, re
 
   # get layer name
   if  (is.null(layer)) {
-    layer <- st_layers("../SSGBM-VRI-BEM-data/vri_bcgov.shp")$name[1]
+    layer <- st_layers(src_datasource)$name[1]
   }
 
   # get file extension
-  pos <- regexpr("\\.([[:alnum:]]+)$", x)
-  dst_file_extension <- ifelse(pos > -1L, substring(x, pos + 1L), "")
-  dst_file_no_ext <- substr(dst_filename, 1 , length(dst_filename) - (length(file_extension) +1))
+  pos <- regexpr("\\.([[:alnum:]]+)$", dst_filename)
+  dst_file_extension <- ifelse(pos > -1L, substring(dst_filename, pos + 1L), "")
+  dst_file_no_ext <- substr(dst_filename, 1 , nchar(dst_filename) - (nchar(dst_file_extension) +1))
 
   # define type of attributes
-  numeric_attributes <- c(paste0("SPECT_PCT", 1:6), "CR_CLOSURE", "COV_PCT_1", "PROJ_AGE_1")
-  character_attributes <- c(paste0("BCLCS_LV_", 1:6), paste0("SPEC_CD_", 1:6), "LAND_CD_1", "LBL_VEGCOV")
+  numeric_attributes <- c(paste0("SPEC_PCT_", 1:6), "CR_CLOSURE", "COV_PCT_1", "PROJ_AGE_1")
+  character_attributes <- c(paste0("BCLCS_LV_", 1:5), paste0("SPEC_CD_", 1:6), "LAND_CD_1", "LBL_VEGCOV")
   date_attributes <- "HRVSTDT"
 
   # creat temp dst_file for all attributes
@@ -44,12 +54,12 @@ rasterize_vri <- function(src_datasource, dst_filename, layer, a_srs, te, tr, re
     if (verbose) {
       message(paste0("creating raster layer for ", numeric_attributes[i]))
     }
-    gdal_rasterize(src_datasource = src_datasource,
-                   dst_filename =  dst_filename_att[i],
-                   a = numeric_attributes[i],
-                   a_srs = a_srs,
-                   te = te,
-                   tr = tr)
+    gdalUtils::gdal_rasterize(src_datasource = src_datasource,
+                              dst_filename =  dst_filename_att[i],
+                              a = numeric_attributes[i],
+                              a_srs = a_srs,
+                              te = te,
+                              tr = tr)
   }
 
   # create temp raster file for character attributes
@@ -59,26 +69,55 @@ rasterize_vri <- function(src_datasource, dst_filename, layer, a_srs, te, tr, re
       if (verbose) {
         message(paste0("creating raster layer for ", character_attributes[i], " for value ", factor_dt$value[j]))
       }
-      gdal_rasterize(src_datasource = src_datasource,
-                     dst_filename =  dst_filename_att[i + length(numeric_attributes)],
-                     burn = factor_dt$factor[j],
-                     where = cat('\'','\"', character_attributes[i], '\"', ' = \'', factor_dt$value[j], '\'\'', sep = ""),
-                     a_srs = a_srs,
-                     te = te,
-                     tr = tr)
+      gdalUtils::gdal_rasterize(src_datasource = src_datasource,
+                                dst_filename =  dst_filename_att[i + length(numeric_attributes)],
+                                burn = factor_dt$factor[j],
+                                where = paste0("\"", character_attributes[i], "\"", " = '", factor_dt$value[j], "'"),
+                                a_srs = a_srs,
+                                te = te,
+                                tr = tr)
     }
   }
 
   for (i in seq.int(along.with = date_attributes)) {
-    gdal_rasterize(src_datasource = src_datasource,
-                   dst_filename =  dst_filename_att[i +  length(numeric_attributes) + length(character_attributes)],
-                   a = date_attributes[i],
-                   sql =  paste0("SELECT  CAST(",date_attributes[i]," as integer(3)) as ",date_attributes[i]," FROM ",layer),
-                   a_srs = a_srs,
-                   te = te,
-                   tr = tr)
+    if (verbose) {
+      message(paste0("creating raster layer for ", date_attributes[i]))
+    }
+    gdalUtils::gdal_rasterize(src_datasource = src_datasource,
+                              dst_filename =  dst_filename_att[i +  length(numeric_attributes) + length(character_attributes)],
+                              a = date_attributes[i],
+                              sql =  paste0("SELECT  CAST(",date_attributes[i]," as integer(3)) as ",date_attributes[i]," FROM ",layer),
+                              a_srs = a_srs,
+                              te = te,
+                              tr = tr)
   }
 
+  # combine all raster layers together
+  if (verbose) {
+    message("Combining all raster layers into one file")
+  }
+  total_raster <- rast(dst_filename_att[1])
+  for (i in 2:length(dst_filename_att)) {
+    add(total_raster) <- rast(dst_filename_att[i])
+  }
 
+  # writing new raster
+  if (verbose) {
+    message(paste0("Writing new raster file at ", dst_filename))
+  }
+  terra::writeRaster(x = total_raster, filename = dst_filename, overwrite = TRUE)
+
+  # deleting temp files
+  if (verbose) {
+    message("deleting temporary files")
+  }
+  lapply(dst_filename_att, unlink)
+
+  if (output_raster) {
+    return(rast(dst_filename))
+  }
+  else {
+    return(NULL)
+  }
 
 }
