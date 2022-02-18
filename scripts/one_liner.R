@@ -262,6 +262,9 @@ values(w_r)[which_lines,]
 
 
 vri_rast <- rasterize_vri("../SSGBM-VRI-BEM-data/vri_bcgov.shp", "../SSGBM-VRI-BEM-data/rast_vri_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = T)
+vri <- st_read("../SSGBM-VRI-BEM-data/vri_bcgov.shp")
+vri_rast <- rast("../SSGBM-VRI-BEM-data/rast_vri_test.tif")
+
 
 "../SSGBM-VRI-BEM-data/CodeWithUs.gdb"
 FWA_WETLANDS_POLY
@@ -312,3 +315,24 @@ dst_filename = "../SSGBM-VRI-BEM-data/temp_vri_POLY_AREA.tif",
 a_srs =  crs(elev_rast, proj = T),
 te = c(extent[1], extent[3], extent[2], extent[4]),
 tr = res(elev_rast))
+
+
+wet <- read_wetlands(wkt_filter = "POLYGON ((1023955 988730.2, 1065018 988730.2, 1065018 1016988, 1023955 1016988, 1023955 988730.2))")
+write_sf(wet, "../SSGBM-VRI-BEM-data/test.shp")
+
+w_rast <- rasterize_sf("../SSGBM-VRI-BEM-data/test.shp", "../SSGBM-VRI-BEM-data/rast_vri_test.tif",burn = "wl_pct", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = T)
+plot(w_rast)
+
+gdalUtils::gdal_rasterize(src_datasource = "../SSGBM-VRI-BEM-data/test.shp",
+                          dst_filename =  "../SSGBM-VRI-BEM-data/rast_wt_test.tif",
+                          a = "wl_pct",
+                          sql =  paste0("SELECT 1 as ","wl_pct"," FROM ","test"),
+                          a_srs =  crs(elev_rast, proj = T),
+                          te = c(extent[1], extent[3], extent[2], extent[4]),
+                          tr = res(elev_rast))
+
+library(terra)
+write_sf(wet[ , "Shape"], "../SSGBM-VRI-BEM-data/test.shp")
+w <- st_read("../SSGBM-VRI-BEM-data/test.shp")
+w_r <- rast("../SSGBM-VRI-BEM-data/rast_wt_test.tif")
+plot(w_r)
