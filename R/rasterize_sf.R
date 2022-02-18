@@ -1,6 +1,6 @@
-#' Convert vri to raster
+#' Convert sf to raster
 #'
-#' Convert all attributes of interest of vri into raster layers
+#' Convert all attributes of interest of sf into raster layers
 #'
 #' @param src_datasource character, path of source file
 #' @param dst_filename character, path of destination file
@@ -9,13 +9,16 @@
 #' @param te Numeric. c(xmin,ymin,xmax,ymax) (GDAL >= 1.8.0) set georeferenced extents. The values must be expressed in georeferenced units. If not specified, the extent of the output file will be the extent of the vector layers.
 #' @param tr Numeric. c(xres,yres) (GDAL >= 1.8.0) set target resolution. The values must be expressed in georeferenced units. Both must be positive values.
 #' @param reference character of SpatRaster, will be used as reference raster for extent, resolution and crs
+#' @param numeric_attributes character vector of names of attributes of type numeric
+#' @param character_attributes character vector of names of attributes of type character
+#' @param date_attributes character vector of names of attributes of type date
 #' @param output_raster boolean, if TRUE, the resulting raster will be returned
 #' @param verbose boolean, if TRUE progression message will be printed
 #' @return SpatRaster if output_raster is TRUE, NULL otherwise
 #' @importFrom terra `add<-` crs ext rast writeRaster
 #' @importFrom gdalUtils gdal_rasterize
 #' @export
-rasterize_vri <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NULL, te = NULL, tr = NULL, reference = NULL, output_raster = FALSE, verbose = TRUE) {
+rasterize_sf <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NULL, te = NULL, tr = NULL, reference = NULL, numeric_attributes, character_attributes, date_attributes, output_raster = FALSE, verbose = TRUE) {
 
   # if provided use parameters from reference raster
   if (!is.null(reference)) {
@@ -41,11 +44,6 @@ rasterize_vri <- function(src_datasource, dst_filename, layer =  NULL, a_srs = N
   dst_file_extension <- ifelse(pos > -1L, substring(dst_filename, pos + 1L), "")
   dst_file_no_ext <- substr(dst_filename, 1 , nchar(dst_filename) - (nchar(dst_file_extension) +1))
 
-  # define type of attributes
-  numeric_attributes <- c(paste0("SPEC_PCT_", 1:6), "CR_CLOSURE", "COV_PCT_1", "PROJ_AGE_1")
-  character_attributes <- c(paste0("BCLCS_LV_", 1:5), paste0("SPEC_CD_", 1:6), "LAND_CD_1", "LBL_VEGCOV")
-  date_attributes <- "HRVSTDT"
-
   # creat temp dst_file for all attributes
   dst_filename_att <- paste0(dst_file_no_ext, "_", c(numeric_attributes, character_attributes, date_attributes),".", dst_file_extension)
 
@@ -64,18 +62,20 @@ rasterize_vri <- function(src_datasource, dst_filename, layer =  NULL, a_srs = N
 
   # create temp raster file for character attributes
   for (i in seq.int(along.with = character_attributes)) {
-    factor_dt <- get(character_attributes[i])
-    for (j in seq.int(length.out = nrow(factor_dt))) {
-      if (verbose) {
-        message(paste0("creating raster layer for ", character_attributes[i], " for value ", factor_dt$value[j]))
+    factor_dt <- tryCatch(expr = get(character_attributes[i]), error = function(x) message(paste0(x, ", skipping layer")))
+    if (!is.null(factor_dt)) {
+      for (j in seq.int(length.out = nrow(factor_dt))) {
+        if (verbose) {
+          message(paste0("creating raster layer for ", character_attributes[i], " for value ", factor_dt$value[j]))
+        }
+        gdalUtils::gdal_rasterize(src_datasource = src_datasource,
+                                  dst_filename =  dst_filename_att[i + length(numeric_attributes)],
+                                  burn = factor_dt$factor[j],
+                                  where = paste0("\"", character_attributes[i], "\"", " = '", factor_dt$value[j], "'"),
+                                  a_srs = a_srs,
+                                  te = te,
+                                  tr = tr)
       }
-      gdalUtils::gdal_rasterize(src_datasource = src_datasource,
-                                dst_filename =  dst_filename_att[i + length(numeric_attributes)],
-                                burn = factor_dt$factor[j],
-                                where = paste0("\"", character_attributes[i], "\"", " = '", factor_dt$value[j], "'"),
-                                a_srs = a_srs,
-                                te = te,
-                                tr = tr)
     }
   }
 
@@ -120,4 +120,31 @@ rasterize_vri <- function(src_datasource, dst_filename, layer =  NULL, a_srs = N
     return(NULL)
   }
 
+}
+
+#' Convert vri to raster
+#'
+#' Convert all attributes of interest of vri into raster layers
+#' @inheritParams read_vri
+#' @return SpatRaster if output_raster is TRUE, NULL otherwise
+#' @importFrom terra `add<-` crs ext rast writeRaster
+#' @importFrom gdalUtils gdal_rasterize
+#' @export
+
+rasterize_vri <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NULL, te = NULL,
+                          tr = NULL, reference = NULL,
+                          numeric_attributes = c(paste0("SPEC_PCT_", 1:6), "CR_CLOSURE", "COV_PCT_1", "PROJ_AGE_1"),
+                          character_attributes = c(paste0("BCLCS_LV_", 1:5), paste0("SPEC_CD_", 1:6), "LAND_CD_1", "LBL_VEGCOV"),
+                          date_attributes = "HRVSTDT", output_raster = FALSE, verbose = TRUE) {
+  rasterize_sf(src_datasource = src_datasource,
+               dst_filename = dst_filename,
+               layer =  layer,
+               a_srs = a_srs,
+               te = te, tr = tr,
+               reference = reference,
+               numeric_attributes = numeric_attributes,
+               character_attributes = character_attributes,
+               date_attributes = date_attributes,
+               output_raster = output_raster,
+               verbose = verbose)
 }
