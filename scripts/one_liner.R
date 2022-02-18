@@ -225,3 +225,84 @@ vri_bem <- merge_bem_on_vri.data.table(vri, bem)
 
 
 cells(b_rast$TEIS_ID, 15729)
+
+
+# comput slope and aspect
+elev_rast <- terra::rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
+terrain(elev_rast, v = c("slope", "aspect"), unit = "radians", filename = "../slope_aspect.tif")
+slope_asp <- rast("../slope_aspect.tif ")
+add(elev_rast) <- slope_asp
+writeRaster(elev_rast, "../elev.tif", overwrite = T)
+
+
+# create raster
+library(gdalUtils)
+library(terra)
+elev_rast <- terra::rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
+vri <- read_vri("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY/VEG_R1_PLY_polygon.shp")
+extent <- ext(elev_rast)
+gdal_rasterize(src_datasource = "../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY",
+               a = "OPEN_SRC",
+               dst_filename = "../SSGBM-VRI-BEM-data/temp_vri_OPEN_SRC.tif",
+               a_srs =  crs(elev_rast, proj = T),
+               te = c(extent[1], extent[3], extent[2], extent[4]),
+               tr = res(elev_rast))
+
+gdal_rasterize(src_datasource = "../SSGBM-VRI-BEM-data/CodeWithUs.gdb",
+               a = "GEOMETRY_Area",
+               sql = "SELECT  GEOMETRY_Area FROM FWA_WETLANDS_POLY",
+               dst_filename = "../SSGBM-VRI-BEM-data/wetlands.tif",
+               a_srs =  crs(elev_rast, proj = T),
+               te = c(extent[1], extent[3], extent[2], extent[4]),
+               tr = res(elev_rast))
+w_r <- rast( "../SSGBM-VRI-BEM-data/wetlands.tif")
+plot(w_r)
+"../SSGBM-VRI-BEM-data/CodeWithUs.gdb"
+FWA_WETLANDS_POLY
+GEOMETRY_Area
+wet <- read_wetlands("../SSGBM-VRI-BEM-data/CodeWithUs.gdb")
+gdalUtils::gdal_rasterize("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY",
+               sql = "SELECT CAST(HARVEST_YEAR, AS numeric(10,3)) as TEST FROM VEG_R1_PLY_polygon",
+               a = "TEST",
+               dst_filename = "../SSGBM-VRI-BEM-data/temp_vri_HARVEST_DATE_2.tif",
+               a_srs =  crs(elev_rast, proj = T),
+               te = c(extent[1], extent[3], extent[2], extent[4]),
+               tr = res(elev_rast))
+
+gdal_rasterize("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY/VEG_R1_PLY_polygon.shp",
+               burn = 1,
+               where = '"OPEN_IND" = \'Y\'',
+               dst_filename = "../SSGBM-VRI-BEM-data/temp_vri_OPEN_IND.tif",
+               a_srs =  crs(elev_rast, proj = T),
+               te = c(extent[1], extent[3], extent[2], extent[4]),
+               tr = res(elev_rast),
+               init  = 2)
+
+'SELECT geometry julianday(HARVEST_DATE) - julianday(\'1970-01-01\')   as attr FROM VEG_R1_PLY_polygon'
+
+gdal_rasterize("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY/VEG_R1_PLY_polygon.shp",
+               burn = 2,
+               where = '"OPEN_IND" = \'N\'',
+               dst_filename = "../SSGBM-VRI-BEM-data/temp_vri_OPEN_IND.tif")
+
+vri_r1 <- rast("../SSGBM-VRI-BEM-data/temp_vri_POLY_AREA.tif")
+vri_r2 <- rast("../SSGBM-VRI-BEM-data/temp_vri_OPEN_SRC.tif")
+vri_r3 <- rast("../SSGBM-VRI-BEM-data/temp_vri_BCLCS_LV_1.tif")
+vri_r4 <- rast("../SSGBM-VRI-BEM-data/temp_vri_OPEN_IND.tif")
+vri_r4 <- rast("../SSGBM-VRI-BEM-data/temp_vri_HARVEST_DATE_2.tif")
+values(vri_r4)
+plot(vri_r4)
+  add(vri_r1) <- vri_r2
+writeRaster(vri_r1 , "../SSGBM-VRI-BEM-data/temp_vri.tif")
+vri_r <- rast("../SSGBM-VRI-BEM-data/temp_vri.tif")
+plot(vri_r)
+plot(test)
+vri <- read_sf("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY/VEG_R1_PLY_polygon.shp")
+
+
+gdal_rasterize("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY/VEG_R1_PLY_polygon.shp",
+   a = "POLY_AREA",
+dst_filename = "../SSGBM-VRI-BEM-data/temp_vri_POLY_AREA.tif",
+a_srs =  crs(elev_rast, proj = T),
+te = c(extent[1], extent[3], extent[2], extent[4]),
+tr = res(elev_rast))
