@@ -7,6 +7,7 @@
 #' @param beu_bec data.table object of allowed BEC and BEM Code Combos
 #' @param clear_site_ma boolean, if TRUE variable SITE_M1A, SITE_M2A will be cleared
 #' @param use_ifelse boolean, if TRUE correction done after the combine_duplicated_BEUMC will only be applied on rows that were not affected by the correction of duplicated BEUMC
+#' @param raster_res numeric vector of resolution example c(25,25)
 #' @details
 #' This function performs some adjustments to BEM attributes based on VRI attributes :
 #'   * Combine together components with duplicated BEUMC
@@ -19,9 +20,9 @@
 #' @import data.table
 #' @export
 
-update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE) {
+update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE, raster_res = NULL) {
 
-  vri_bem <- correct_bem_from_vri(vri_bem = vri_bem, rivers = rivers, beu_bec = beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE)
+  vri_bem <- correct_bem_from_vri(vri_bem = vri_bem, rivers = rivers, beu_bec = beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE, raster_res = raster_res)
   vri_bem <- find_intersection_with_rivers(vri_bem, rivers)
 
   return(vri_bem)
@@ -39,14 +40,19 @@ update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, 
 #' @return sf object which contains adjusted map codes
 #' @import sf
 #' @import data.table
-correct_bem_from_vri <- function(vri_bem, beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE) {
+correct_bem_from_vri <- function(vri_bem, beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE,  raster_res = NULL) {
   # TODO verify that FORESTED_1 and BEUMC_S1 are blank when needed
 
   classes_vri_bem <- attr(vri_bem, "class")
   setDT(vri_bem)
 
   if (is.null(vri_bem[["vri_area"]])) {
-    set(vri_bem, j = "vri_area", value = st_area(vri_bem$Shape))
+    if (!is.null(raster_res)) {
+      set(vri_bem, j = "vri_area", value = raster_res[1] * raster_res[2])
+    }
+    else {
+      set(vri_bem, j = "vri_area", value = st_area(vri_bem$Shape))
+    }
   }
 
   # validate inputs ----
@@ -472,31 +478,41 @@ correct_bem_from_vri <- function(vri_bem, beu_bec, clear_site_ma = TRUE, use_ife
   return(vri_bem)
 }
 
-find_intersection_with_rivers <- function(vri_bem, rivers) {
+find_intersection_with_rivers <- function(vri_bem, rivers, raster = FALSE) {
 
   # for all feature that intersect with rivers
   # SITE_M3A becomes "a"
   # and lbl is updated to say the old value became "a"
 
-  classes_vri_bem <- attr(vri_bem, "class")
-  setDT(vri_bem)
   #TODO
   # maybe reverse the geometry and the unique ( need to test)
   # just need to find the line that intersect with rivers
+  if (raster) {
+    vri_bem[rivers == 1,
+            `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
+                                   "Updated SITE_M3A from '", SITE_M3A, "' to 'a' because polygon is adjacent to river"),
+                 SITE_M3A = "a")]
 
-  which_lines <- unique(unlist(sf:::CPL_geos_binop(rivers$GEOMETRY,
-                                                   vri_bem$Shape,
-                                                   "intersects",
-                                                   pattern = NA_character_,
-                                                   prepared = TRUE)))
+  }
+  else {
 
-  vri_bem[(which_lines),
-          `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
-                                 "Updated SITE_M3A from '", SITE_M3A, "' to 'a' because polygon is adjacent to river"),
-               SITE_M3A = "a")]
+    classes_vri_bem <- attr(vri_bem, "class")
+    setDT(vri_bem)
+    which_lines <- unique(unlist(sf:::CPL_geos_binop(rivers$GEOMETRY,
+                                                     vri_bem$Shape,
+                                                     "intersects",
+                                                     pattern = NA_character_,
+                                                     prepared = TRUE)))
+
+    vri_bem[(which_lines),
+            `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
+                                   "Updated SITE_M3A from '", SITE_M3A, "' to 'a' because polygon is adjacent to river"),
+                 SITE_M3A = "a")]
 
 
-  attr(vri_bem, "class") <- classes_vri_bem
+    attr(vri_bem, "class") <- classes_vri_bem
+  }
+
   return(vri_bem)
 
 }

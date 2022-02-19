@@ -38,12 +38,12 @@
 #'
 #' @return Summary of Area by unique ecosystem
 #' @import data.table
-#' @importFrom terra terrain rast
+#' @importFrom terra rast extract vect `add<-
 #' @export
 #'
 create_RRM_ecosystem_from_rasters <- function(vri_dsn = dsn, bem_dsn = dsn, rivers_dsn = dsn, wetlands_dsn = dsn, ccb_dsn = dsn, elevation_dsn,
                                               beu_bec_csv = "csv/Allowed_BEC_BEUs_NE_ALL.csv", beu_wetland_update_csv = "csv/beu_wetland_updates.csv", unique_ecosystem = "csv/Skeena_VRIBEM_LUT.csv",
-                                              clear_site_ma = TRUE, use_ifelse = TRUE, most_recent_harvest_year, elevation_threshold = 1400, wkt_filter = character(0), n_iterations = 1, verbose = TRUE) {
+                                              clear_site_ma = TRUE, use_ifelse = TRUE, most_recent_harvest_year, elevation_threshold, wkt_filter = character(0), n_iterations = 1, verbose = TRUE) {
 
   # TODO add default wkt_filter when no filter is passed but number of iterations is greater than 1 (maybe default to the whole skeena region, store it as part of the package)
   # TODO check what appends when wkt_filter cover an area where there is no polygon
@@ -95,17 +95,29 @@ create_RRM_ecosystem_from_rasters <- function(vri_dsn = dsn, bem_dsn = dsn, rive
     }
     vri_bem <- setDT(extract(vri, vect(grid[iteration]), cells = TRUE, xy = TRUE))
 
+    # converting raster values to original values
+    if (verbose) {
+      message("formating raster values")
+    }
+    format_vri_raster_extract(vri_bem)
+    format_bem_raster_extract(vri_bem)
 
     if (verbose) {
       message("correction of bem attributes based on vri attributes")
     }
-    vri_bem <- correct_bem_from_vri(vri_bem = vri_bem, beu_bec = beu_bec_csv, clear_site_ma = clear_site_ma, use_ifelse = use_ifelse)
+    vri_bem <- correct_bem_from_vri(vri_bem = vri_bem, beu_bec = beu_bec_csv, clear_site_ma = clear_site_ma, use_ifelse = use_ifelse, raster_res = res(vri))
 
 
     if (verbose) {
       message("correction of bem attributes based on wetlands csv")
     }
-      vri_bem <- correct_bem_from_wetlands(vri_bem = vri_bem, buc = beu_wetland_update_csv)
+    vri_bem <- correct_bem_from_wetlands(vri_bem = vri_bem, buc = beu_wetland_update_csv)
+
+    if (verbose) {
+      message("Computing above threshold elevation indicator and slope mod")
+    }
+    vri_bem <- compute_elevation_ind_and_slope_mod(vri_bem, elevation_threshold = elevation_threshold)
+
 
     if (verbose) {
       message("calc_forest_age_class")
@@ -121,11 +133,17 @@ create_RRM_ecosystem_from_rasters <- function(vri_dsn = dsn, bem_dsn = dsn, rive
     vri_bem <- merge_unique_ecosystem_fields(vri_bem = vri_bem,
                                              unique_ecosystem_dt = unique_ecosystem_dt)
 
+    # creation and correction of crown bear 1 to 3 and crown moose 1 to 3
+    if (verbose) {
+      message("Correction CROWN_BEAR and CROWN_MOOSE based on forestation")
+    }
+    vri_bem <- correct_crown(vri_bem = vri_bem, raster = TRUE)
+
     # creating rrm output
     if (verbose) {
       message(paste0("Creating RRM output for iteration ", iteration))
     }
-    RRM_ecosystem_list[[iteration]] <- create_RRM_ecosystem(vri_bem = vri_bem)
+    RRM_ecosystem_list[[iteration]] <- create_RRM_ecosystem(vri_bem = vri_bem, raster_res = res(vri))
 
   }
 
@@ -140,7 +158,7 @@ create_RRM_ecosystem_from_rasters <- function(vri_dsn = dsn, bem_dsn = dsn, rive
   else {
     return(rbindlist(RRM_ecosystem_list)[, .(Hectares = sum(Hectares)),
                                          by = list(ECO_SEC, BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC, SLOPE_MOD, SITE_M3A,
-                                                   SNOW_CODE, ABOVE_ELEV, CROWN_MOOSE, STRCT, STAND, FORESTED)])
+                                                   SNOW_CODE, ABOVE_ELEV_THOLD, CROWN_MOOSE, STRCT, STAND, FORESTED)])
   }
 
 }

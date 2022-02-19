@@ -9,7 +9,8 @@ update_bem_from_vri(
   rivers,
   beu_bec,
   clear_site_ma = TRUE,
-  use_ifelse = TRUE
+  use_ifelse = TRUE,
+  raster_res = NULL
 )
 }
 \arguments{
@@ -22,6 +23,8 @@ update_bem_from_vri(
 \item{clear_site_ma}{boolean, if TRUE variable SITE_M1A, SITE_M2A will be cleared}
 
 \item{use_ifelse}{boolean, if TRUE correction done after the combine_duplicated_BEUMC will only be applied on rows that were not affected by the correction of duplicated BEUMC}
+
+\item{raster_res}{numeric vector of resolution example c(25,25)}
 }
 \value{
 sf object which contains adjusted map codes

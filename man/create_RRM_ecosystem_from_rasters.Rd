@@ -17,7 +17,7 @@ create_RRM_ecosystem_from_rasters(
   clear_site_ma = TRUE,
   use_ifelse = TRUE,
   most_recent_harvest_year,
-  elevation_threshold = 1400,
+  elevation_threshold,
   wkt_filter = character(0),
   n_iterations = 1,
   verbose = TRUE

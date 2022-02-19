@@ -32,7 +32,7 @@ update_bem_from_wetlands <- function(vri_bem, wetlands, buc) {
   # make correction on bem from wetlands csv
   vri_bem <- correct_bem_from_wetlands(vri_bem = vri_bem, wetlands = wetlands, buc = buc)
 
-  return(vri_bem)
+  return(st_as_sf(vri_bem))
 
 }
 
@@ -259,7 +259,7 @@ correct_bem_from_wetlands <- function(vri_bem, buc) {
                      "Code_WL4", "Code_WL5", "Code_WL6", "Code_WL7", "Code_WL8", "Code_WL10",
                      "new_beu_code", "new_wl_zone"), value = NULL)
 
-  return(st_as_sf(vri_bem))
+  return(vri_bem)
 }
 
 

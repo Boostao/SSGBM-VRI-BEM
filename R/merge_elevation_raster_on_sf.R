@@ -23,11 +23,23 @@
 #' @importFrom terra extract terrain `add<-` vect
 #' @export
 #'
-merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_threshold = 1400, terrain_raster = NULL) {
+merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_threshold, terrain_raster = NULL) {
 
-  # TODO check if terra is able to compute this even when the raster is to big to me loaded in RAM at once
-  # Compute slope and aspect ----
 
+  vri_bem <- downscale_elevation(elev_raster = elev_raster,
+                                 vri_bem = vri_bem,
+                                 elevation_threshold = elevation_threshold,
+                                 terrain_raster = terrain_raster)
+
+   vri_bem <- compute_elevation_ind_and_slope_mod(vri_bem)
+
+
+  return(st_as_sf(vri_bem))
+
+}
+
+
+downscale_elevation <- function(elev_raster, vri_bem, terrain_raster = NULL) {
   if (is.null(terrain_raster)) {
     terrain_raster <- terrain(elev_raster, v = c("slope", "aspect"), unit = "radians")
   }
@@ -44,9 +56,7 @@ merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_thresho
                                           vect(vri_bem)))[, .(ELEV = mean(dem),
                                                               MEAN_SLOPE = mean(slope, na.rm = T) * 57.29578/90,
                                                               MEAN_ASP = ((atan2(sum(sin(aspect) * (slope > 0), na.rm = T)/sum(slope > 0, na.rm = T), sum(cos(aspect) * (slope > 0), na.rm = T)/sum(slope > 0 , na.rm = T)) * 57.29578) + 360) %% 360),
-                                                              by = .(vri_bem_index = as.integer(ID))]
-
-
+                                                          by = .(vri_bem_index = as.integer(ID))]
 
   setDT(vri_bem)
 
@@ -66,6 +76,10 @@ merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_thresho
     warning("could not calculate elevation for the following lines : ", paste(which_no_elev, collapse = ", "))
   }
 
+  return(vri_bem)
+}
+
+compute_elevation_ind_and_slope_mod <- function(vri_bem, elevation_threshold) {
   # Create elevation above threshold indicator ----
   if (!is.null(vri_bem[["ABOVE_ELEV_THOLD"]])){
     set(vri_bem, j = "ABOVE_ELEV_THOLD", value = NULL)
@@ -103,7 +117,6 @@ merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_thresho
 
                            default = NA_character_)]
 
-
-  return(st_as_sf(vri_bem))
+  return(vri_bem)
 
 }

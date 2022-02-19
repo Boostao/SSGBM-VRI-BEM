@@ -12,7 +12,7 @@ rasterize_ccb(
   te = NULL,
   tr = NULL,
   reference = NULL,
-  numeric_attributes = "HARVEST_YEAR",
+  numeric_attributes = "HARVESTYR",
   character_attributes = NULL,
   date_attributes = NULL,
   burn = NULL,
@@ -51,5 +51,5 @@ rasterize_ccb(
 SpatRaster if output_raster is TRUE, NULL otherwise
 }
 \description{
-Create one raster layers for rivers with value from HARVEST_YEAR
+Create one raster layers for consolidated cutblocks with value from HARVEST_YEAR
 }

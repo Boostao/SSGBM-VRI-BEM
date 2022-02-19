@@ -4,7 +4,12 @@
 \alias{find_crown_area_dominant_values}
 \title{Find Area-Dominant CROWN_BEAR and CROWN_MOOSE}
 \usage{
-find_crown_area_dominant_values(vri, bem, intersection_dt = NULL)
+find_crown_area_dominant_values(
+  vri,
+  bem,
+  intersection_dt = NULL,
+  raster = FALSE
+)
 }
 \arguments{
 \item{vri}{sf object that represent VRI (vegetation resources inventory) features}
@@ -12,6 +17,8 @@ find_crown_area_dominant_values(vri, bem, intersection_dt = NULL)
 \item{bem}{sf object that represent BEM (broad ecosystem mapping) features}
 
 \item{intersection_dt}{data.table  area and index of vri and bem intersections (optional for speed efficiency)}
+
+\item{raster}{boolean}
 }
 \value{
 sf object containing VRI-BEM

@@ -5,12 +5,28 @@
 #' @param vri sf object that represent VRI (vegetation resources inventory) features
 #' @param bem sf object that represent BEM (broad ecosystem mapping) features
 #' @param intersection_dt data.table  area and index of vri and bem intersections (optional for speed efficiency)
+#' @param raster boolean
 #' @return sf object containing VRI-BEM
 #' @import data.table
 #' @import sf
 #' @export
-find_crown_area_dominant_values <- function(vri, bem, intersection_dt = NULL) {
+find_crown_area_dominant_values <- function(vri, bem, intersection_dt = NULL, raster = FALSE) {
 
+  # use data.table for fast data manipulation
+  classes_vri <- attr(vri, "class")
+  setDT(vri)
+
+  vri <- merge_crown(vri = vri, bem = bem, intersection_dt = intersection_dt)
+
+  vri <- correct_crown(vri_bem = vri, raster = raster)
+
+  attr(vri, "class") <- classes_vri
+
+  return(vri)
+
+}
+
+merge_crown <- function(vri, bem, intersection_dt = NULL) {
   # if no intersections object previoulsy calculated is passed , recompute the intersections
   # TODO need vri_obj_id in intersection dt because polygon have changed because of intersection with ccb
   if (is.null(intersection_dt)) {
@@ -19,9 +35,7 @@ find_crown_area_dominant_values <- function(vri, bem, intersection_dt = NULL) {
     set(intersection_dt, j = "VRI_OBJ_ID", value = vri[["VRI_OBJ_ID"]][intersection_dt[["vri_index"]]])
   }
 
-  # use data.table for fast data manipulation
-  classes_vri <- attr(vri, "class")
-  setDT(vri)
+
 
 
   # merge CROWN BEAR and CROWN MOOSE info on intersection data
@@ -47,16 +61,24 @@ find_crown_area_dominant_values <- function(vri, bem, intersection_dt = NULL) {
   match_lines <- match(vri[["TEIS_ID"]],  bem$TEIS_ID[most_covered_moose_by_bem[["bem_index"]]])
   set(vri, j = paste0("CROWN_MOOSE_", 1:3), value = most_covered_moose_by_bem[["V1"]][match_lines])
 
-  # blank Crown moose and crown moose if not ecounter specific condition
+  return(vri)
+}
 
-  for (i in 1:3) {
-    set(vri, i = which(!(vri[[paste0("FORESTED_", i)]] == "Y" & substr(vri[[paste0("STRCT_S", i)]], start = 1, stop = 1) %in% c("4", "5", "6", "7"))), j = paste0("CROWN_BEAR_", i) , value = NA)
-    set(vri, i = which(!(vri[[paste0("FORESTED_", i)]] == "Y" & substr(vri[[paste0("STRCT_S", i)]], start = 1, stop = 1) %in% c("4", "5", "6", "7"))), j = paste0("CROWN_MOOSE_", i), value = NA)
+correct_crown <- function(vri_bem, raster = FALSE) {
 
+  setDT(vri_bem)
+
+  #  if coming from raster create the crown bear and moose variable
+  if (raster) {
+    set(vri_bem, j = paste0("CROWN_BEAR_", 1:3), value = vri_bem[["CROWN_BEAR"]])
+    set(vri_bem, j = paste0("CROWN_MOOSE_", 1:3), value = vri_bem[["CROWN_MOOSE"]])
   }
 
-  attr(vri, "class") <- classes_vri
+  # blank Crown moose and crown moose if not ecounter specific condition
+  for (i in 1:3) {
+    set(vri_bem, i = which(!(vri_bem[[paste0("FORESTED_", i)]] == "Y" & substr(vri_bem[[paste0("STRCT_S", i)]], start = 1, stop = 1) %in% c("4", "5", "6", "7"))), j = paste0("CROWN_BEAR_", i) , value = NA)
+    set(vri_bem, i = which(!(vri_bem[[paste0("FORESTED_", i)]] == "Y" & substr(vri_bem[[paste0("STRCT_S", i)]], start = 1, stop = 1) %in% c("4", "5", "6", "7"))), j = paste0("CROWN_MOOSE_", i), value = NA)
+  }
 
-  return(vri)
-
+  return(vri_bem)
 }

@@ -47,7 +47,7 @@
 create_RRM_ecosystem_from_scratch <- function(dsn, vri_dsn = dsn, bem_dsn = dsn, rivers_dsn = dsn, wetlands_dsn = dsn, ccb_dsn = dsn, elevation_dsn,
                                               layers_names_list = list(vri = "VEG_R1_PLY_polygon", bem = "BEM", rivers = "FWA_RIVERS_POLY", wetlands = "FWA_WETLANDS_POLY", ccb = "CNS_CUT_BL_polygon"),
                                               beu_bec_csv = "csv/Allowed_BEC_BEUs_NE_ALL.csv", beu_wetland_update_csv = "csv/beu_wetland_updates.csv", unique_ecosystem = "csv/Skeena_VRIBEM_LUT.csv",
-                                              clear_site_ma = TRUE, use_ifelse = TRUE, most_recent_harvest_year, elevation_threshold = 1400, wkt_filter = character(0), n_iterations = 1, verbose = TRUE) {
+                                              clear_site_ma = TRUE, use_ifelse = TRUE, most_recent_harvest_year, elevation_threshold, wkt_filter = character(0), n_iterations = 1, verbose = TRUE) {
 
   # TODO add default wkt_filter when no filter is passed but number of iterations is greater than 1 (maybe default to the whole skeena region, store it as part of the package)
   # TODO check what appends when wkt_filter cover an area where there is no polygon
@@ -165,7 +165,7 @@ create_RRM_ecosystem_from_scratch <- function(dsn, vri_dsn = dsn, bem_dsn = dsn,
   else {
     return(rbindlist(RRM_ecosystem_list)[, .(Hectares = sum(Hectares)),
                                          by = list(ECO_SEC, BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC, SLOPE_MOD, SITE_M3A,
-                                                   SNOW_CODE, ABOVE_ELEV, CROWN_MOOSE, STRCT, STAND, FORESTED)])
+                                                   SNOW_CODE, ABOVE_ELEV_THOLD, CROWN_MOOSE, STRCT, STAND, FORESTED)])
   }
 
 }
