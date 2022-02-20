@@ -7,6 +7,7 @@
 #' @param beu_bec data.table object of allowed BEC and BEM Code Combos
 #' @param clear_site_ma boolean, if TRUE variable SITE_M1A, SITE_M2A will be cleared
 #' @param use_ifelse boolean, if TRUE correction done after the combine_duplicated_BEUMC will only be applied on rows that were not affected by the correction of duplicated BEUMC
+#' @param raster_res numeric vector of resolution example c(25,25)
 #' @details
 #' This function performs some adjustments to BEM attributes based on VRI attributes :
 #'   * Combine together components with duplicated BEUMC
@@ -19,15 +20,39 @@
 #' @import data.table
 #' @export
 
-update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE) {
+update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE, raster_res = NULL) {
 
+  vri_bem <- correct_bem_from_vri(vri_bem = vri_bem, rivers = rivers, beu_bec = beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE, raster_res = raster_res)
+  vri_bem <- find_intersection_with_rivers(vri_bem, rivers)
+
+  return(vri_bem)
+
+}
+
+#' @inheritParams read_vri
+#' @details
+#' This function performs some adjustments to BEM attributes based on VRI attributes :
+#'   * Combine together components with duplicated BEUMC
+#'   * Perform corrections based on BC Land Cover Classification Scheme (BCLCS) and land : assign related SDEC_1 to 10
+#'   * Remove inadequate wetlands
+#'   * Update STAND_... based on species
+#'
+#' @return sf object which contains adjusted map codes
+#' @import sf
+#' @import data.table
+correct_bem_from_vri <- function(vri_bem, beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE,  raster_res = NULL) {
   # TODO verify that FORESTED_1 and BEUMC_S1 are blank when needed
 
   classes_vri_bem <- attr(vri_bem, "class")
   setDT(vri_bem)
 
   if (is.null(vri_bem[["vri_area"]])) {
-    set(vri_bem, j = "vri_area", value = st_area(vri_bem$Shape))
+    if (!is.null(raster_res)) {
+      set(vri_bem, j = "vri_area", value = raster_res[1] * raster_res[2])
+    }
+    else {
+      set(vri_bem, j = "vri_area", value = st_area(vri_bem$Shape))
+    }
   }
 
   # validate inputs ----
@@ -60,7 +85,7 @@ update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, 
     set(vri_bem, j = "SMPL_TYPE", value = NA_character_)
   }
 
- # perform corrections ----
+  # perform corrections ----
 
   if (clear_site_ma) {
     set(vri_bem , j = c("SITE_M1A", "SITE_M2A"), value = NA_character_)
@@ -100,10 +125,10 @@ update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, 
                       vri_bem[["Area_Ha"]] > 2 & vri_bem[["Area_Ha"]] <=60 & !vri_bem[["row_updated"]])
 
   vri_bem[(which_LS), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "LS",
-                       lbl_edit = "Updated to 10 LS because BCLCS_LV_1 = 'N', BCLCS_LV_5 = 'LA', Area <= 60 ha",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "LS",
+                           lbl_edit = "Updated to 10 LS because BCLCS_LV_1 = 'N', BCLCS_LV_5 = 'LA', Area <= 60 ha",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
 
   ## LL - Large Lake (line 303) ----
@@ -111,21 +136,21 @@ update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, 
                       vri_bem[["Area_Ha"]] > 60 & !vri_bem[["row_updated"]])
 
   vri_bem[(which_LL), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "LL",
-                       lbl_edit = "Updated to 10 LL because BCLCS_LV_1 = 'N', BCLCS_LV_5 = 'LA', Area > 60 ha",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "LL",
+                           lbl_edit = "Updated to 10 LL because BCLCS_LV_1 = 'N', BCLCS_LV_5 = 'LA', Area > 60 ha",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
 
 
-    ## RE - Reservoir (line 315) ----
+  ## RE - Reservoir (line 315) ----
   which_RE <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_1"]] == "N" & vri_bem[["BCLCS_LV_5"]] == "RE" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_RE), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "RE",
-                       lbl_edit = "Updated to 10 RE because BCLCS_LV_1 = 'N', BCLCS_LV_5 = 'RE'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "RE",
+                           lbl_edit = "Updated to 10 RE because BCLCS_LV_1 = 'N', BCLCS_LV_5 = 'RE'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
 
   ## RI - Rivers (line 331) ----
@@ -135,10 +160,10 @@ update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, 
   which_RI <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_1"]] == "N" & vri_bem[["BCLCS_LV_5"]] %in% c("RI", "RS") & !vri_bem[["row_updated"]])
 
   vri_bem[(which_RI), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "RI",
-                       lbl_edit = "Updated to 10 RI because BCLCS_LV_1 = 'N', BCLCS_LV_5 = 'RI' or 'RS'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "RI",
+                           lbl_edit = "Updated to 10 RI because BCLCS_LV_1 = 'N', BCLCS_LV_5 = 'RI' or 'RS'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
 
 
@@ -147,10 +172,10 @@ update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, 
                     & vri_bem[["BCLCS_LV_3"]] == "W" & vri_bem[["AGE_CL_STS"]] == -1 & !vri_bem[["row_updated"]])
 
   vri_bem[(which_RI), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "WL",
-                       lbl_edit = "Updated to 10 WL because BCLCS_LV_1/2/3 = 'V'/'N'/'W' and AGE_CL_STS = -1",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "WL",
+                           lbl_edit = "Updated to 10 WL because BCLCS_LV_1/2/3 = 'V'/'N'/'W' and AGE_CL_STS = -1",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
 
   ## Remove Wetland - Forested (line 380) ----
@@ -165,38 +190,38 @@ update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, 
                       !vri_bem[["row_updated"]])
 
   vri_bem[(which_BB), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "BB",
-                       lbl_edit = "Updated to 10 BB because SPEC_CD_1 = 'SB'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "BB",
+                           lbl_edit = "Updated to 10 BB because SPEC_CD_1 = 'SB'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
 
   ## AP - Anthropogenic and Non-vegetated (line 457) ----
   which_AP <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "AP" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_AP), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "UR",
-                       lbl_edit = "Updated to 10 UR because BCLCS_LV_5 = 'AP'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "UR",
+                           lbl_edit = "Updated to 10 UR because BCLCS_LV_5 = 'AP'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
   ## BU - (line 464) -----
   which_BU <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "BU" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_BU), `:=`(SDEC_1 = 10,
-                       DISTCLS_1 = "F",
-                       lbl_edit = "Updated to 10 UR because BCLCS_LV_5 = 'AP'",
-                       row_updated = TRUE)]
+                           DISTCLS_1 = "F",
+                           lbl_edit = "Updated to 10 UR because BCLCS_LV_5 = 'AP'",
+                           row_updated = TRUE)]
 
 
   ## CL - Cliff (line 470) ----
   which_CL <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["SLOPE_MOD"]]  %in% c("q", "z") & !vri_bem[["row_updated"]])
 
   vri_bem[(which_CL), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "CL",
-                       lbl_edit = "Updated to 10 CL because Slope Mod is q or z",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "CL",
+                           lbl_edit = "Updated to 10 CL because Slope Mod is q or z",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
   #TODO see if comment below from python script still applies
   # TO BE ADDED
@@ -210,20 +235,20 @@ update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, 
 
 
   vri_bem[(which_GB), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "GB",
-                       lbl_edit = "Updated to 10 GB because BCLCS_LV_5 = 'GB'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "GB",
+                           lbl_edit = "Updated to 10 GB because BCLCS_LV_5 = 'GB'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
 
   ## GL - Glacier (line 491) ----
   which_GL <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] %in% c("GL", "PN") & !vri_bem[["row_updated"]])
 
   vri_bem[(which_GL), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "GL",
-                       lbl_edit = "Updated to 10 GL because BCLCS_LV_5 = 'GL' or 'PN'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "GL",
+                           lbl_edit = "Updated to 10 GL because BCLCS_LV_5 = 'GL' or 'PN'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
 
 
@@ -231,112 +256,112 @@ update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, 
   which_GP <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "GP" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_GP), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "GP",
-                       lbl_edit = "Updated to 10 GP because BCLCS_LV_5 = 'GB'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "GP",
+                           lbl_edit = "Updated to 10 GP because BCLCS_LV_5 = 'GB'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
   ## LL - Landing (line 505) ----
   which_LL <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "LL" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_LL), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "LL",
-                       lbl_edit = "Updated to 10 LL because BCLCS_LV_5 = 'LL'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "LL",
+                           lbl_edit = "Updated to 10 LL because BCLCS_LV_5 = 'LL'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
   ## MI - Mine (line 512) ----
   which_MI <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] %in% c("MI", "TZ", "MZ") & !vri_bem[["row_updated"]])
 
   vri_bem[(which_MI), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "MI",
-                       lbl_edit = "Updated to 10 MI because BCLCS_LV_5 = 'MI', 'TZ' or 'MZ'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "MI",
+                           lbl_edit = "Updated to 10 MI because BCLCS_LV_5 = 'MI', 'TZ' or 'MZ'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
   ## RO - Rock (line 519) ----
   which_RO <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] %in% c("RO", "BR", "BI") & !vri_bem[["row_updated"]])
 
   vri_bem[(which_RO), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "RO",
-                       lbl_edit = "Updated to 10 RO because BCLCS_LV_5 = 'RO', 'BR' or 'BI'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "RO",
+                           lbl_edit = "Updated to 10 RO because BCLCS_LV_5 = 'RO', 'BR' or 'BI'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
 
   ## TA - Talus (line 526) ----
   which_TA <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "TA" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_TA), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "TA",
-                       lbl_edit = "Updated to 10 TA because BCLCS_LV_5 = 'TA'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "TA",
+                           lbl_edit = "Updated to 10 TA because BCLCS_LV_5 = 'TA'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
   ## TC - Transportation Corridor (line 533) ----
   which_TC <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] %in% c("TC", "RN", "RZ") & !vri_bem[["row_updated"]])
 
   vri_bem[(which_TC), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "TC",
-                       lbl_edit = "Updated to 10 TC because BCLCS_LV_5 = 'TC', 'RN' or 'RZ'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "TC",
+                           lbl_edit = "Updated to 10 TC because BCLCS_LV_5 = 'TC', 'RN' or 'RZ'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
   ##  TR - Transmission Corridor (line 540) ----
   which_TR <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "TR" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_TR), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "TR",
-                       lbl_edit = "Updated to 10 TR because BCLCS_LV_5 = 'TR'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "TR",
+                           lbl_edit = "Updated to 10 TR because BCLCS_LV_5 = 'TR'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
 
   ## UV - Unvegetated (line 547) ----
   which_UV <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] %in% c("UV", "RS", "MU", "ES", "CB", "MN", "RM") & !vri_bem[["row_updated"]])
 
   vri_bem[(which_UV), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "UV",
-                       lbl_edit = "Updated to 10 UV because BCLCS_LV_5 = 'UV', 'RS', 'MU', 'ES', 'CB', 'MN' or 'RM'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "UV",
+                           lbl_edit = "Updated to 10 UV because BCLCS_LV_5 = 'UV', 'RS', 'MU', 'ES', 'CB', 'MN' or 'RM'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
   which_UV <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["LAND_CD_1"]] %in% c("UV", "RS", "MU", "ES", "CB", "MN", "RM") &
                       vri_bem[["COV_PCT_1"]] >= 95 & !vri_bem[["row_updated"]])
 
   vri_bem[(which_UV), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "UV",
-                       lbl_edit = "Updated to 10 UV because LAND_CD_1 = 'UV', 'RS', 'MU', 'ES', 'CB', 'MN' or 'RM' and COV_PCT_1 >= 95'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "UV",
+                           lbl_edit = "Updated to 10 UV because LAND_CD_1 = 'UV', 'RS', 'MU', 'ES', 'CB', 'MN' or 'RM' and COV_PCT_1 >= 95'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
 
   ## UR - Urban (line 564) ----
   which_UR <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "UR" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_UR), `:=`(SDEC_1 = 10,
-                       BEUMC_S1 = "UR",
-                       lbl_edit = "Updated to 10 UR because BCLCS_LV_5 = 'UR'",
-                       row_updated = TRUE,
-                       blank_eco_variables = TRUE)]
+                           BEUMC_S1 = "UR",
+                           lbl_edit = "Updated to 10 UR because BCLCS_LV_5 = 'UR'",
+                           row_updated = TRUE,
+                           blank_eco_variables = TRUE)]
 
 
   ## TC - Transportation Corridor (Component 2) (line 564) ----
 
   which_TC2 <-  which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_2"]] == "T" & vri_bem[["SDEC_1"]] == 10 &
                         vri_bem[["LBL_VEGCOV"]] %in% c('rz', 'rz,by', 'rz,by,he', 'rz,by,he,sl', 'rz,by,sl', 'rz,by,sl,he', 'rz,by,st', 'rz,he',
-                                                                'rz,by,sl,he', 'rz,by,st', 'rz,he', 'rz,he,by', 'rz,he,by,sl', 'rz,he,sl', 'rz,he,sl,by',
-                                                                'rz,he,st', 'rz,he,st,by', 'rz,hf,by', 'rz,hf,sl,by', 'rz,hg', 'rz,hg,sl', 'rz,sl',
-                                                                'rz,sl,by', 'rz,sl,by,he', 'rz,sl,he', 'rz,sl,he,by', 'rz,sl,hf', 'rz,sl,hf,by', 'rz,sl,hg',
-                                                                'rz,st', 'rz,st,he', 'rz,st,he,by', 'rz,st,hf', 'rz,st,hg') &
+                                                       'rz,by,sl,he', 'rz,by,st', 'rz,he', 'rz,he,by', 'rz,he,by,sl', 'rz,he,sl', 'rz,he,sl,by',
+                                                       'rz,he,st', 'rz,he,st,by', 'rz,hf,by', 'rz,hf,sl,by', 'rz,hg', 'rz,hg,sl', 'rz,sl',
+                                                       'rz,sl,by', 'rz,sl,by,he', 'rz,sl,he', 'rz,sl,he,by', 'rz,sl,hf', 'rz,sl,hf,by', 'rz,sl,hg',
+                                                       'rz,st', 'rz,st,he', 'rz,st,he,by', 'rz,st,hf', 'rz,st,hg') &
                         !vri_bem[["row_updated"]])
 
 
   vri_bem[(which_TC2), `:=`(SDEC_1 = 8,
-                        SDEC_2 = 2,
-                        BEUMC_S2 = "TC",
-                        lbl_edit = "Added 2nd component 2 TC because BCLCS_LV_2 = 'T' and LBL_VEGCOV begins with 'rz'",
-                        row_updated = TRUE)]
+                            SDEC_2 = 2,
+                            BEUMC_S2 = "TC",
+                            lbl_edit = "Added 2nd component 2 TC because BCLCS_LV_2 = 'T' and LBL_VEGCOV begins with 'rz'",
+                            row_updated = TRUE)]
 
 
   # Update STAND_A1 ----
@@ -345,9 +370,9 @@ update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, 
                            vri_bem[["SPEC_PCT_1"]] >= 75 & vri_bem[["STAND_A1"]] %in% c("C", "M"))
 
   vri_bem[(which_stand_B), `:=`(STAND_A1 = "B",
-                            lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
-                                              "Updated STAND_A1 to 'B' because SPEC_CD_1 = '", SPEC_CD_1, "' and SPEC_PCT_1 >= 75 and STAND_A1 was 'C' or 'M'"),
-                            row_updated = TRUE)]
+                                lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
+                                                  "Updated STAND_A1 to 'B' because SPEC_CD_1 = '", SPEC_CD_1, "' and SPEC_PCT_1 >= 75 and STAND_A1 was 'C' or 'M'"),
+                                row_updated = TRUE)]
 
 
   # line 618
@@ -355,92 +380,105 @@ update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, 
                            vri_bem[["SPEC_PCT_1"]] >= 50 & vri_bem[["SPEC_PCT_1"]] < 75 & vri_bem[["STAND_A1"]] %in% c("C", "B"))
 
   vri_bem[(which_stand_M), `:=`(STAND_A1 = "M",
-                            lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
-                                              "Updated STAND_A1 to 'M' because SPEC_CD_1 = '", SPEC_CD_1, "' and SPEC_PCT_1 >= 50 and < 75 and STAND_A1 was 'C' or 'B'"),
-                            row_updated = TRUE)]
+                                lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
+                                                  "Updated STAND_A1 to 'M' because SPEC_CD_1 = '", SPEC_CD_1, "' and SPEC_PCT_1 >= 50 and < 75 and STAND_A1 was 'C' or 'B'"),
+                                row_updated = TRUE)]
 
   # line 627
   which_stand_C <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["SPEC_CD_1"]] %in% c("B", "BB", "BL", "CW", "FD", "FDI", "HM", "HW", "PA", "PL", "PLI",
-                                                                                  "S", "SB", "SE", "SS", "SW", "SX", "SXW") &
+                                                                                       "S", "SB", "SE", "SS", "SW", "SX", "SXW") &
                            vri_bem[["SPEC_PCT_1"]] >= 75 & vri_bem[["STAND_A1"]] == "M")
 
   vri_bem[(which_stand_C), `:=`(STAND_A1 = "C",
-                            lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
-                                              "Updated STAND_A1 to 'C' because SPEC_CD_1 = '", SPEC_CD_1, "' and SPEC_PCT_1 >= 75 and STAND_A1 was 'M'"),
-                            row_updated = TRUE)]
+                                lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
+                                                  "Updated STAND_A1 to 'C' because SPEC_CD_1 = '", SPEC_CD_1, "' and SPEC_PCT_1 >= 75 and STAND_A1 was 'M'"),
+                                row_updated = TRUE)]
 
 
   #Blank Eco Fields (line 639) ----
   which_to_blank <- which(vri_bem[["blank_eco_variables"]])
 
   set_shifted_eco_variables(vri_bem, i = which_to_blank, list(c(1,NA), c(2,NA), c(3,NA)), character_variables_1 = c("REALM_1", "GROUP_1", "CLASS_1", "KIND_1", "SITE_S1", "SITEAM_S1A",
-                                                                                                   "SITEAM_S1B", "SITEAM_S1C", "SITEAM_S1D", "SITEMC_S1", "SITE_M1A", "SITE_M1B", "STRCT_S1", "STRCT_M1", "STAND_A1", "SERAL_1",
-                                                                                                   "DISTCLS_1", "DISTSCLS_1", "DISSSCLS_1", "SECL_1",
-                                                                                                   "SESUBCL_1", "COND_1", "VIAB_1", "FORESTED_1"))
+                                                                                                                    "SITEAM_S1B", "SITEAM_S1C", "SITEAM_S1D", "SITEMC_S1", "SITE_M1A", "SITE_M1B", "STRCT_S1", "STRCT_M1", "STAND_A1", "SERAL_1",
+                                                                                                                    "DISTCLS_1", "DISTSCLS_1", "DISSSCLS_1", "SECL_1",
+                                                                                                                    "SESUBCL_1", "COND_1", "VIAB_1", "FORESTED_1"))
   set(vri_bem, i = which_to_blank, j = c("SDEC_2", "SDEC_3"), value = 0)
 
   # line 654
   vri_bem[is.na(SMPL_TYPE), DEC_Total:= SDEC_1 + SDEC_2 + SDEC_3]
 
   vri_bem[is.na(SMPL_TYPE) & DEC_Total != 10,
-      `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
-                             "**** DECILE TOTAL ", SDEC_1, "+", SDEC_2, "+", SDEC_3, "=", DEC_Total),
-           row_updated = TRUE)]
+          `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
+                                 "**** DECILE TOTAL ", SDEC_1, "+", SDEC_2, "+", SDEC_3, "=", DEC_Total),
+               row_updated = TRUE)]
 
   # bgc subzone and beu mapcode
 
-   set(vri_bem, j = "merge_key", value = paste0(vri_bem[["BGC_ZONE"]], vri_bem[["BGC_SUBZON"]]))
+  set(vri_bem, j = "merge_key", value = paste0(vri_bem[["BGC_ZONE"]], vri_bem[["BGC_SUBZON"]]))
 
-   # merge and change beu for decile 1
+  # merge and change beu for decile 1
 
-   vri_bem[beu_bec, on = .(merge_key = `BGC Subzone`, BEUMC_S1 = `BEU_#`), `:=`(script_rule = `i.Script rule`, change_to_beu = `i.Change to BEU =`)]
+  vri_bem[beu_bec, on = .(merge_key = `BGC Subzone`, BEUMC_S1 = `BEU_#`), `:=`(script_rule = `i.Script rule`, change_to_beu = `i.Change to BEU =`)]
 
-   vri_bem[script_rule == "Error" &  nchar(change_to_beu) == 2, `:=`(BEUMC_S1 = change_to_beu,
-                                                                 lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S1, " corrected to ", change_to_beu, " in decile 1"),
-                                                                 row_updated = TRUE)]
+  vri_bem[script_rule == "Error" &  nchar(change_to_beu) == 2, `:=`(BEUMC_S1 = change_to_beu,
+                                                                    lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S1, " corrected to ", change_to_beu, " in decile 1"),
+                                                                    row_updated = TRUE)]
 
-   vri_bem[script_rule == "Error" &  nchar(change_to_beu) != 2, `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S1, " in decile 1 is invalid combination (mapper needs to assess)"),
-                                                                 row_updated = TRUE)]
+  vri_bem[script_rule == "Error" &  nchar(change_to_beu) != 2, `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S1, " in decile 1 is invalid combination (mapper needs to assess)"),
+                                                                    row_updated = TRUE)]
 
-   vri_bem[script_rule == "Error" &  is.na(change_to_beu), `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S1, " in decile 1 combination is not listed"),
-                                                            row_updated = TRUE)]
+  vri_bem[script_rule == "Error" &  is.na(change_to_beu), `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S1, " in decile 1 combination is not listed"),
+                                                               row_updated = TRUE)]
 
-   # remove merged variables
-   set(vri_bem, j = c("script_rule", "change_to_beu"), value = NULL)
-
-
-   # merge and change beu for decile 2
-
-   vri_bem[beu_bec, on = .(merge_key = `BGC Subzone`, BEUMC_S2 = `BEU_#`), `:=`(script_rule = `i.Script rule`, change_to_beu = `i.Change to BEU =`)]
-
-   vri_bem[script_rule == "Error" &  nchar(change_to_beu) == 2, `:=`(BEUMC_S2 = change_to_beu,
-                                                                 lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S2, " corrected to ", change_to_beu, " in decile 2"),
-                                                                 row_updated = TRUE)]
-
-   vri_bem[script_rule == "Error" &  nchar(change_to_beu) != 2, `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S2, " in decile 2 is invalid combination (mapper needs to assess)"),
-                                                                 row_updated = TRUE)]
-
-   vri_bem[script_rule == "Error" &  is.na(change_to_beu), `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S2, " in decile 2 combination is not listed"),
-                                                            row_updated = TRUE)]
-
-   set(vri_bem, j = c("script_rule", "change_to_beu"), value = NULL)
+  # remove merged variables
+  set(vri_bem, j = c("script_rule", "change_to_beu"), value = NULL)
 
 
-   # merge and change beu for decile 3
+  # merge and change beu for decile 2
 
-   vri_bem[beu_bec, on = .(merge_key = `BGC Subzone`, BEUMC_S3 = `BEU_#`), `:=`(script_rule = `i.Script rule`, change_to_beu = `i.Change to BEU =`)]
+  vri_bem[beu_bec, on = .(merge_key = `BGC Subzone`, BEUMC_S2 = `BEU_#`), `:=`(script_rule = `i.Script rule`, change_to_beu = `i.Change to BEU =`)]
 
-   vri_bem[script_rule == "Error" &  nchar(change_to_beu) == 2, `:=`(BEUMC_S3 = change_to_beu,
-                                                                 lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S3, " corrected to ", change_to_beu, " in decile 3"),
-                                                                 row_updated = TRUE)]
+  vri_bem[script_rule == "Error" &  nchar(change_to_beu) == 2, `:=`(BEUMC_S2 = change_to_beu,
+                                                                    lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S2, " corrected to ", change_to_beu, " in decile 2"),
+                                                                    row_updated = TRUE)]
 
-   vri_bem[script_rule == "Error" &  nchar(change_to_beu) != 2, `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S3, " in decile 3 is invalid combination (mapper needs to assess)"),
-                                                                 row_updated = TRUE)]
+  vri_bem[script_rule == "Error" &  nchar(change_to_beu) != 2, `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S2, " in decile 2 is invalid combination (mapper needs to assess)"),
+                                                                    row_updated = TRUE)]
 
-   vri_bem[script_rule == "Error" &  is.na(change_to_beu), `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S3, " in decile 3 combination is not listed"),
-                                                            row_updated = TRUE)]
+  vri_bem[script_rule == "Error" &  is.na(change_to_beu), `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S2, " in decile 2 combination is not listed"),
+                                                               row_updated = TRUE)]
 
-   set(vri_bem, j = c("script_rule", "change_to_beu"), value = NULL)
+  set(vri_bem, j = c("script_rule", "change_to_beu"), value = NULL)
+
+
+  # merge and change beu for decile 3
+
+  vri_bem[beu_bec, on = .(merge_key = `BGC Subzone`, BEUMC_S3 = `BEU_#`), `:=`(script_rule = `i.Script rule`, change_to_beu = `i.Change to BEU =`)]
+
+  vri_bem[script_rule == "Error" &  nchar(change_to_beu) == 2, `:=`(BEUMC_S3 = change_to_beu,
+                                                                    lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S3, " corrected to ", change_to_beu, " in decile 3"),
+                                                                    row_updated = TRUE)]
+
+  vri_bem[script_rule == "Error" &  nchar(change_to_beu) != 2, `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S3, " in decile 3 is invalid combination (mapper needs to assess)"),
+                                                                    row_updated = TRUE)]
+
+  vri_bem[script_rule == "Error" &  is.na(change_to_beu), `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S3, " in decile 3 combination is not listed"),
+                                                               row_updated = TRUE)]
+
+  set(vri_bem, j = c("script_rule", "change_to_beu"), value = NULL)
+
+
+  # remove temp variables
+
+
+  set(vri_bem, j = c("row_updated", "blank_eco_variables", "merge_key"), value = NULL)
+
+  attr(vri_bem, "class") <- classes_vri_bem
+
+  return(vri_bem)
+}
+
+find_intersection_with_rivers <- function(vri_bem, rivers, raster = FALSE) {
 
   # for all feature that intersect with rivers
   # SITE_M3A becomes "a"
@@ -449,24 +487,32 @@ update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, 
   #TODO
   # maybe reverse the geometry and the unique ( need to test)
   # just need to find the line that intersect with rivers
+  if (raster) {
+    vri_bem[rivers == 1,
+            `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
+                                   "Updated SITE_M3A from '", SITE_M3A, "' to 'a' because polygon is adjacent to river"),
+                 SITE_M3A = "a")]
 
-  which_lines <- unique(unlist(sf:::CPL_geos_binop(rivers$GEOMETRY,
-                                                   vri_bem$Shape,
-                                                   "intersects",
-                                                   pattern = NA_character_,
-                                                   prepared = TRUE)))
+  }
+  else {
 
-  vri_bem[(which_lines),
-      `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
-                             "Updated SITE_M3A from '", SITE_M3A, "' to 'a' because polygon is adjacent to river"),
-           SITE_M3A = "a")]
+    classes_vri_bem <- attr(vri_bem, "class")
+    setDT(vri_bem)
+    which_lines <- unique(unlist(sf:::CPL_geos_binop(rivers$GEOMETRY,
+                                                     vri_bem$Shape,
+                                                     "intersects",
+                                                     pattern = NA_character_,
+                                                     prepared = TRUE)))
+
+    vri_bem[(which_lines),
+            `:=`(lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
+                                   "Updated SITE_M3A from '", SITE_M3A, "' to 'a' because polygon is adjacent to river"),
+                 SITE_M3A = "a")]
 
 
-  # remove temp variables
+    attr(vri_bem, "class") <- classes_vri_bem
+  }
 
-  set(vri_bem, j = c("row_updated", "blank_eco_variables", "merge_key"), value = NULL)
-
-  attr(vri_bem, "class") <- classes_vri_bem
   return(vri_bem)
 
 }

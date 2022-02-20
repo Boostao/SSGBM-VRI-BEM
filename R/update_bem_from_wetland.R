@@ -26,8 +26,38 @@
 #' @export
 update_bem_from_wetlands <- function(vri_bem, wetlands, buc) {
 
-  setDT(vri_bem)
+  # compute % of wetland area for each BEM ----
+  vri_bem <- merge_wetlands(vri_bem = vri_bem, wetlands = wetlands)
 
+  # make correction on bem from wetlands csv
+  vri_bem <- correct_bem_from_wetlands(vri_bem = vri_bem, wetlands = wetlands, buc = buc)
+
+  return(st_as_sf(vri_bem))
+
+}
+
+#' @inheritParams read_vri
+#' @return data.table object
+merge_wetlands <- function(vri_bem, wetlands) {
+  setDT(vri_bem)
+  # Find intersections between BEM and Wetlands
+  intersections <- st_intersection(vri_bem$Shape, wetlands$Shape)
+  intersection_dt <- data.table(vri_bem = attr(intersections, "idx")[, 1], wetlands = attr(intersections, "idx")[, 2], area = st_area(intersections))
+  index_dt <- intersection_dt[, .(wetland_area = sum(area, na.rm = TRUE)), by = vri_bem]
+
+  vri_bem[index_dt[["vri_bem"]], wetland_area := index_dt[["wetland_area"]]]
+  # as.numeric to remove class units
+  vri_bem[, wl_pct:= as.numeric(wetland_area/vri_area)]
+  vri_bem[is.na(wl_pct), `:=`(wl_pct = 0, wetland_area = set_units(0, "m^2"))]
+
+  return(vri_bem)
+
+}
+
+#' @inheritParams read_vri
+#' @return sf object
+correct_bem_from_wetlands <- function(vri_bem, buc) {
+  setDT(vri_bem)
   # check if all required attributes are there
   validate_required_attributes(ifc = vri_bem,
                                required_attributes = c("TEIS_ID", "SDEC_1", "BEUMC_S1", "REALM_1", "GROUP_1", "CLASS_1", "KIND_1", "SITE_S1",
@@ -56,18 +86,6 @@ update_bem_from_wetlands <- function(vri_bem, wetlands, buc) {
   # Make note of which polygons have SITE_M3A == 'a' for later (before the 'a' is potentially moved to
   # SITE_M1A or SITE_M2A)
   site_m3a_eq_a <- vri_bem[["SITE_M3A"]] == "a"
-
-  # compute % of wetland area for each BEM ----
-
-  # Find intersections between BEM and Wetlands
-  intersections <- st_intersection(vri_bem$Shape, wetlands$Shape)
-  intersection_dt <- data.table(vri_bem = attr(intersections, "idx")[, 1], wetlands = attr(intersections, "idx")[, 2], area = st_area(intersections))
-  index_dt <- intersection_dt[, .(wetland_area = sum(area, na.rm = TRUE)), by = vri_bem]
-
-  vri_bem[index_dt[["vri_bem"]], wetland_area := index_dt[["wetland_area"]]]
-  # as.numeric to remove class units
-  vri_bem[, wl_pct:= as.numeric(wetland_area/vri_area)]
-  vri_bem[is.na(wl_pct), `:=`(wl_pct = 0, wetland_area = set_units(0, "m^2"))]
 
   vri_bem[, Lbl_edit_wl := "No Wetland."]
   vri_bem[wl_pct > 0, Lbl_edit_wl := paste0(wl_pct, "% of polygon occupied by wetland.")]
@@ -241,6 +259,7 @@ update_bem_from_wetlands <- function(vri_bem, wetlands, buc) {
                      "Code_WL4", "Code_WL5", "Code_WL6", "Code_WL7", "Code_WL8", "Code_WL10",
                      "new_beu_code", "new_wl_zone"), value = NULL)
 
-  return(st_as_sf(vri_bem))
+  return(vri_bem)
 }
+
 

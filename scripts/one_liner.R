@@ -1,15 +1,18 @@
 devtools::load_all()
 
+aoi_filter <- "POLYGON ((1023955 988730.2, 1065018 988730.2, 1065018 1016988, 1023955 1016988, 1023955 988730.2))"
+
 unique_eco <-  create_unique_ecosystem_from_scratch(dsn = "../SSGBM-VRI-BEM-data/CodeWithUs.gdb",
                                      vri_dsn = "../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY",
                                      bem_dsn = "../SSGBM-VRI-BEM-data/BEM_VRI",
-                                     wkt_filter = "POLYGON ((941827.7 932215.1, 1065018 932215.1, 1065018 1016988, 941827.7 1016988, 941827.7 932215.1))",
-                                     n_iterations = 9)
+                                     wkt_filter = aoi_filter,
+                                     n_iterations = 1,
+                                     use_ifelse = FALSE)
 
 unique_eco_2 <- create_unique_ecosystem_from_scratch(dsn = "../SSGBM-VRI-BEM-data/CodeWithUs.gdb",
                                                                     vri_dsn = "../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY",
                                                                     bem_dsn = "../SSGBM-VRI-BEM-data/BEM_VRI",
-                                                                    wkt_filter = "POLYGON ((941827.7 932215.1, 1065018 932215.1, 1065018 1016988, 941827.7 1016988, 941827.7 932215.1))",
+                                                                    wkt_filter = aoi_filter,
                                                                     n_iterations = 1)
 
 
@@ -18,8 +21,9 @@ rrm_output <-  create_RRM_ecosystem_from_scratch(dsn = "../SSGBM-VRI-BEM-data/Co
                                                  bem_dsn = "../SSGBM-VRI-BEM-data/BEM_VRI",
                                                  elevation_dsn = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif",
                                                  most_recent_harvest_year = 2020,
-                                                 wkt_filter = "POLYGON ((941827.7 932215.1, 1065018 932215.1, 1065018 1016988, 941827.7 1016988, 941827.7 932215.1))",
-                                                 n_iterations = 9)
+                                                 elevation_threshold = 1400,
+                                                 wkt_filter = aoi_filter,
+                                                 n_iterations = 1)
 
 
 vri <- read_vri("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY")
@@ -199,14 +203,12 @@ v_rast <- rast("../vri.tif")
 b_rast <- rast("../bem.tif")
 elev_rast <- rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
 terrain_raster <- terrain(elev_rast, v = c("slope", "aspect"), unit = "radians")
-extend(terrain_raster, v_rast)
 add(v_rast) <- elev_rast
 add(v_rast) <- terrain_raster
-
-vri_bem <- setDT(extract(v_rast, vect("POLYGON ((941827.7 932215.1, 982891.1 932215.1, 982891.1 960472.6, 941827.7 960472.6, 941827.7 932215.1))"), cells = TRUE, xy = TRUE))
-
 rivers <- read_rivers("../SSGBM-VRI-BEM-data/CodeWithUs.gdb")
 wetlands <- read_wetlands("../SSGBM-VRI-BEM-data/CodeWithUs.gdb", wkt_filter = "POLYGON ((941827.7 932215.1, 982891.1 932215.1, 982891.1 960472.6, 941827.7 960472.6, 941827.7 932215.1))")
+
+vri_bem <- setDT(extract(v_rast, vect("POLYGON ((941827.7 932215.1, 982891.1 932215.1, 982891.1 960472.6, 941827.7 960472.6, 941827.7 932215.1))"), cells = TRUE, xy = TRUE))
 
 # merge rivers
 river_intersect <- cells(v_rast, vect(rivers))[, 2]
@@ -221,3 +223,282 @@ set(vri_bem, i = match(vri_bem$cell, wet_intersect), j = "wl_pct", value = !is.n
 
 
 vri_bem <- merge_bem_on_vri.data.table(vri, bem)
+
+
+cells(b_rast$TEIS_ID, 15729)
+
+
+# comput slope and aspect
+elev_rast <- terra::rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
+terrain(elev_rast, v = c("slope", "aspect"), unit = "radians", filename = "../slope_aspect.tif")
+slope_asp <- rast("../slope_aspect.tif ")
+add(elev_rast) <- slope_asp
+writeRaster(elev_rast, "../elev.tif", overwrite = T)
+
+
+# create raster
+library(gdalUtils)
+library(terra)
+elev_rast <- terra::rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
+vri <- read_vri("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY/VEG_R1_PLY_polygon.shp")
+extent <- ext(elev_rast)
+gdal_rasterize(src_datasource = "../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY",
+               a = "OPEN_SRC",
+               dst_filename = "../SSGBM-VRI-BEM-data/temp_vri_OPEN_SRC.tif",
+               a_srs =  crs(elev_rast, proj = T),
+               te = c(extent[1], extent[3], extent[2], extent[4]),
+               tr = res(elev_rast))
+
+gdalUtils::gdal_rasterize(src_datasource = "../SSGBM-VRI-BEM-data/vri_bcgov.shp",
+               a = "TEST",
+               sql = "SELECT  CAST(HRVSTDT as integer(3)) as TEST FROM vri_bcgov",
+               dst_filename = "../SSGBM-VRI-BEM-data/wetlands.tif",
+               a_srs =  crs(elev_rast, proj = T),
+               te = c(extent[1], extent[3], extent[2], extent[4]),
+               tr = res(elev_rast))
+w_r <- rast( "../SSGBM-VRI-BEM-data/wetlands.tif")
+which_lines <- which(values(w_r)[,1] !=0)
+values(w_r)[which_lines,]
+   plot(w_r)
+
+
+vri_rast <- rasterize_vri("../SSGBM-VRI-BEM-data/vri_bcgov.shp", "../SSGBM-VRI-BEM-data/rast_vri_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = T)
+vri <- st_read("../SSGBM-VRI-BEM-data/vri_bcgov.shp")
+vri_rast <- rast("../SSGBM-VRI-BEM-data/rast_vri_test.tif")
+
+
+"../SSGBM-VRI-BEM-data/CodeWithUs.gdb"
+FWA_WETLANDS_POLY
+GEOMETRY_Area
+wet <- read_wetlands("../SSGBM-VRI-BEM-data/CodeWithUs.gdb")
+gdalUtils::gdal_rasterize("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY",
+               sql = "SELECT CAST(HARVEST_YEAR, AS numeric(10,3)) as TEST FROM VEG_R1_PLY_polygon",
+               a = "TEST",
+               dst_filename = "../SSGBM-VRI-BEM-data/temp_vri_HARVEST_DATE_2.tif",
+               a_srs =  crs(elev_rast, proj = T),
+               te = c(extent[1], extent[3], extent[2], extent[4]),
+               tr = res(elev_rast))
+
+gdal_rasterize("../SSGBM-VRI-BEM-data/Skeena_BEM.gdb/Skeena_BEM.gdb",
+               burn = 12,
+               where = "\"BGC_SUBZON\" = 'mmp'",
+               dst_filename = "../SSGBM-VRI-BEM-data/temp_bem_test.tif",
+               a_srs =  crs(elev_rast, proj = T),
+               te = c(extent[1], extent[3], extent[2], extent[4]),
+               tr = res(elev_rast),
+               init  = 2)
+
+'SELECT geometry julianday(HARVEST_DATE) - julianday(\'1970-01-01\')   as attr FROM VEG_R1_PLY_polygon'
+
+gdal_rasterize("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY/VEG_R1_PLY_polygon.shp",
+               burn = 2,
+               where = '"OPEN_IND" = \'N\'',
+               dst_filename = "../SSGBM-VRI-BEM-data/temp_vri_OPEN_IND.tif")
+
+vri_r1 <- rast("../SSGBM-VRI-BEM-data/temp_vri_POLY_AREA.tif")
+vri_r2 <- rast("../SSGBM-VRI-BEM-data/temp_vri_OPEN_SRC.tif")
+vri_r3 <- rast("../SSGBM-VRI-BEM-data/temp_vri_BCLCS_LV_1.tif")
+vri_r4 <- rast("../SSGBM-VRI-BEM-data/temp_vri_OPEN_IND.tif")
+vri_r4 <- rast("../SSGBM-VRI-BEM-data/temp_vri_HARVEST_DATE_2.tif")
+values(vri_r4)
+plot(vri_r4)
+  add(vri_r1) <- vri_r2
+writeRaster(vri_r1 , "../SSGBM-VRI-BEM-data/temp_vri.tif")
+vri_r <- rast("../SSGBM-VRI-BEM-data/temp_vri.tif")
+plot(vri_r)
+plot(test)
+vri <- read_sf("../SSGBM-VRI-BEM-data/vri_bcgov.shp")
+
+
+gdal_rasterize("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY/VEG_R1_PLY_polygon.shp",
+   a = "POLY_AREA",
+dst_filename = "../SSGBM-VRI-BEM-data/temp_vri_POLY_AREA.tif",
+a_srs =  crs(elev_rast, proj = T),
+te = c(extent[1], extent[3], extent[2], extent[4]),
+tr = res(elev_rast))
+
+
+wet <- read_wetlands(wkt_filter = "POLYGON ((1023955 988730.2, 1065018 988730.2, 1065018 1016988, 1023955 1016988, 1023955 988730.2))")
+write_sf(wet, "../SSGBM-VRI-BEM-data/test.shp")
+
+w_rast <- rasterize_sf("../SSGBM-VRI-BEM-data/test.shp", "../SSGBM-VRI-BEM-data/rast_vri_test.tif",burn = "wl_pct", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = T)
+plot(w_rast)
+
+gdalUtils::gdal_rasterize(src_datasource = "../SSGBM-VRI-BEM-data/test.shp",
+                          dst_filename =  "../SSGBM-VRI-BEM-data/rast_wt_test.tif",
+                          a = "wl_pct",
+                          sql =  paste0("SELECT 1 as ","wl_pct"," FROM ","test"),
+                          a_srs =  crs(elev_rast, proj = T),
+                          te = c(extent[1], extent[3], extent[2], extent[4]),
+                          tr = res(elev_rast))
+
+library(terra)
+write_sf(wet[ , "Shape"], "../SSGBM-VRI-BEM-data/test.shp")
+w <- st_read("../SSGBM-VRI-BEM-data/test.shp")
+w_r <- rast("../SSGBM-VRI-BEM-data/rast_wt_test.tif")
+plot(w_r)
+
+
+
+
+
+
+
+
+
+
+
+
+library(bcdata)
+library(bcmaps)
+library(sf)
+library(rvest)
+library(RPostgres)
+
+# Vegetation Resource Inventory (VRI) 2020
+url_vri <- bcdc_get_record("6ba30649-14cd-44ad-a11f-794feed39f40")$resource_df$url
+curl::curl_download(url_vri, file.path("./data-raw/cache", basename(url_vri)))
+# Load in postgis with psql;
+# CREATE DATABASE vribem;
+# \c vribem;
+# CREATE USER vribem PASSWORD 'vribem';
+# CREATE EXTENSION postgis;
+# CREATE EXTENSION postgis_raster;
+# ogr2ogr -overwrite -progress -f "PostgreSQL" PG:"host=localhost port=5432 dbname=vribem user=vribem password=vribem" --config OGR_ORGANIZE_POLYGONS CCW_INNER_JUST_AFTER_CW_OUTER -gt unlimited VEG_COMP_POLY_AND_LAYER_2020.gdb.zip
+
+# Consolidated Cutblocks (CCL) 2020
+url_ccl <- bcdc_get_record("b1b647a6-f271-42e0-9cd0-89ec24bce9f7")$resource_df$url[2]g
+curl::curl_download(url_ccl, file.path("./data-raw/cache", basename(url_ccl)))
+
+
+st_layers("../SSGBM-VRI-BEM-data/VRIBEMStudyArea2021/VRIBEMStudyArea2021")
+aoi_sf <- st_read("../SSGBM-VRI-BEM-data/VRIBEMStudyArea2021/VRIBEMStudyArea2021")
+
+
+aoi_sf <- st_transform(aoi_sf, crs = st_crs(bcmaps::bc_bound())$proj4string)
+plot(bcmaps::bc_bound())
+plot(aoi_sf$geometry, add =T ,border = 'red')
+
+library(data.table)
+bem_rast <- rasterize_bem("../SSGBM-VRI-BEM-data/BEM_VRI", "../SSGBM-VRI-BEM-data/bem_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = T, layer = "BEM")
+setDT(extract(bem_rast, vect("POLYGON ((1023955 988730.2, 1065018 988730.2, 1065018 1016988, 1023955 1016988, 1023955 988730.2))")))
+plot(bem_rast$BEUMC_S1)
+debugonce(rasterize_sf)
+
+#bem_rast <- rasterize_sf("../SSGBM-VRI-BEM-data/BEM_VRI", "../SSGBM-VRI-BEM-data/bem_test.tif",,character_attributes = "BEUMC_S1", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = T, layer = "BEM")
+library(terra)
+library(data.table)
+library(sf)
+st_layers("../SSGBM-VRI-BEM-data/Skeena_BEM.gdb/Skeena_BEM.gdb")
+plot(rast("../SSGBM-VRI-BEM-data/rast_vri_test_BGC_SUBZON.tif"))
+
+bem_rast <- rast("../SSGBM-VRI-BEM-data/bem_test.tif")
+bem_dt <- setDT(extract(bem_rast, vect("POLYGON ((1023955 988730.2, 1065018 988730.2, 1065018 1016988, 1023955 1016988, 1023955 988730.2))")))
+
+
+plot(bem_rast$BEUMC_S2_1)
+bem_rast$rast_vri_test_BGC_ZONE
+
+
+gdalUtils::gdal_rasterize(src_datasource = "../SSGBM-VRI-BEM-data/BEM_VRI",
+                          dst_filename =  "../SSGBM-VRI-BEM-data/x.tif",
+                          a = "BEUMC_S1",
+                          sql = "SELECT (BEUMC_S1 = 'GL') * 1 + (BEUMC_S1 = 'AU') * 2 + (BEUMC_S1 = 'SU') * 3 + (BEUMC_S1 = 'PR') * 4 + (BEUMC_S1 = 'AT') * 5 + (BEUMC_S1 = 'AV') * 6 + (BEUMC_S1 = 'BP') * 7 + (BEUMC_S1 = 'FB') * 8 + (BEUMC_S1 = 'MS') * 9 + (BEUMC_S1 = 'WL') * 10 + (BEUMC_S1 = 'AM') * 11 + (BEUMC_S1 = 'EW') * 12 + (BEUMC_S1 = 'SF') * 13 + (BEUMC_S1 = 'EF') * 14 + (BEUMC_S1 = 'GB') * 15 + (BEUMC_S1 = 'LL') * 16 + (BEUMC_S1 = 'SM') * 17 + (BEUMC_S1 = 'LP') * 18 + (BEUMC_S1 = 'LS') * 19 + (BEUMC_S1 = 'ER') * 20 + (BEUMC_S1 = 'MF') * 21 + (BEUMC_S1 = 'HS') * 22 + (BEUMC_S1 = 'AG') * 23 + (BEUMC_S1 = 'SR') * 24 + (BEUMC_S1 = 'SP') * 25 + (BEUMC_S1 = 'HP') * 26 + (BEUMC_S1 = 'BK') * 27 + (BEUMC_S1 = 'WR') * 28 + (BEUMC_S1 = 'ME') * 29 + (BEUMC_S1 = 'RO') * 30 AS BEUMC_S1 FROM BEM",
+                          a_srs =  crs(elev_rast, proj = T),
+                          #l = "BEM",
+                          te = c(extent[1], extent[3], extent[2], extent[4]),
+                          tr = res(elev_rast))
+
+gdalUtils::gdal_rasterize(src_datasource = "../SSGBM-VRI-BEM-data/BEM_VRI",
+                          dst_filename =  "../SSGBM-VRI-BEM-data/x.tif",
+                          a = "BEUMC_S1",
+                          sql = "SELECT (BEUMC_S3 = 'GL') * 1 + (BEUMC_S3 = 'AU') * 2 + (BEUMC_S3 = 'SU') * 3 + (BEUMC_S3 = 'PR') * 4 + (BEUMC_S3 = 'AT') * 5 + (BEUMC_S3 = 'AV') * 6 + (BEUMC_S3 = 'BP') * 7 + (BEUMC_S3 = 'FB') * 8 + (BEUMC_S3 = 'MS') * 9 + (BEUMC_S3 = 'WL') * 10 + (BEUMC_S3 = 'AM') * 11 + (BEUMC_S3 = 'EW') * 12 + (BEUMC_S3 = 'SF') * 13 + (BEUMC_S3 = 'EF') * 14 + (BEUMC_S3 = 'GB') * 15 + (BEUMC_S3 = 'LL') * 16",
+                          a_srs =  crs(elev_rast, proj = T),
+                          #l = "BEM",
+                          te = c(extent[1], extent[3], extent[2], extent[4]),
+                          tr = res(elev_rast),
+                          add = T)
+
+
+factor_dt <- get("BEUMC_S1")[!is.na(value)]
+paste0("SELECT ", paste0("(","BEUMC_S1"," = \'", factor_dt$value ,"\') * ", factor_dt$factor, collapse = " + ")," AS ", "BEUMC_S1", " FROM ", "BEM")
+plot(rast("../SSGBM-VRI-BEM-data/x.tif"))
+
+x <- "BGC_ZONE"
+factor_dt <- get(x)
+factor_dt[, paste0("(",x," = ", value ,") *", factor)]
+
+paste0("(",x," = \'", factor_dt$value ,"\') * ", factor_dt$factor, collapse = " + ")
+
+gdalUtils::gdal_rasterize(src_datasource = "../SSGBM-VRI-BEM-data/BEM_VRI",
+                          dst_filename =  "../SSGBM-VRI-BEM-data/x_1.tif",
+                          a = "SDEC_1",
+                          #where = "\"BEUMC_S1\" = 'SL'",
+                          a_srs =  crs(elev_rast, proj = T),
+                          l = "BEM",
+                          te = c(extent[1], extent[3], extent[2], extent[4]),
+                          tr = res(elev_rast))
+
+
+gdal_rasterize(src_datasource = "../SSGBM-VRI-BEM-data/BEM_VRI",
+                          dst_filename =  "../SSGBM-VRI-BEM-data/x_2.tif",
+                          burn = 4,
+                          add = T,
+                          #where = "\"BEUMC_S1\" = 'SF'",
+                          a_srs =  crs(elev_rast, proj = T),
+                          l = "BEM",
+                          te = c(extent[1], extent[3], extent[2], extent[4]),
+                          tr = res(elev_rast))
+library(terra)
+x_1 <- rast("../SSGBM-VRI-BEM-data/x.tif")
+plot(x_1)
+x_2 <- rast("../SSGBM-VRI-BEM-data/x_2.tif")
+add(x_1) <- x_2
+names(x_1) <- c("a", "b")
+plot(x_1$x_1)
+
+x_1 + x_2
+
+plot(x_2)
+plot(rast("../SSGBM-VRI-BEM-data/x.tif"))
+bem <- read_bem("../SSGBM-VRI-BEM-data/BEM_VRI")
+
+plot(bem_rast$rast_vri_test_SDEC_1)
+
+
+x <- 1
+while(x < 10) {
+  x <- x+1
+}
+
+
+
+#########################
+library(terra)
+elev_rast <- terra::rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
+terrain(elev_rast, v = c("slope", "aspect"), unit = "radians", filename = "../slope_aspect.tif", overwrite = T)
+slope_asp <- rast("../slope_aspect.tif ")
+add(elev_rast) <- slope_asp
+names(elev_rast) <- c("ELEV", "MEAN_SLOPE", "MEAN_ASP")
+writeRaster(elev_rast, "../elev_test.tif", overwrite = T)
+
+rasterize_bem("../SSGBM-VRI-BEM-data/BEM_VRI", "../SSGBM-VRI-BEM-data/bem_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "BEM")
+rasterize_vri("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY", "../SSGBM-VRI-BEM-data/vri_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "VEG_R1_PLY_polygon")
+rasterize_wetlands("../SSGBM-VRI-BEM-data/CodeWithUs.gdb", "../SSGBM-VRI-BEM-data/wetlands_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "FWA_WETLANDS_POLY")
+rasterize_rivers("../SSGBM-VRI-BEM-data/CodeWithUs.gdb", "../SSGBM-VRI-BEM-data/rivers_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "FWA_RIVERS_POLY")
+rasterize_ccb("../SSGBM-VRI-BEM-data/CodeWithUs.gdb", "../SSGBM-VRI-BEM-data/ccb_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "CNS_CUT_BL_polygon")
+
+aoi_filter <- "POLYGON ((1023955 988730.2, 1065018 988730.2, 1065018 1016988, 1023955 1016988, 1023955 988730.2))"
+
+test_out <- create_RRM_ecosystem_from_rasters(vri_dsn = "../SSGBM-VRI-BEM-data/vri_test.tif",
+                                  bem_dsn = "../SSGBM-VRI-BEM-data/bem_test.tif",
+                                  wetlands_dsn = "../SSGBM-VRI-BEM-data/wetlands_test.tif",
+                                  rivers_dsn = "../SSGBM-VRI-BEM-data/rivers_test.tif",
+                                  ccb_dsn = "../SSGBM-VRI-BEM-data/ccb_test.tif",
+                                  elevation_dsn = "../elev_test.tif",
+                                  most_recent_harvest_year = 2020,
+                                  elevation_threshold = 1400,
+                                  wkt_filter = aoi_filter,
+                                  n_iterations = 1)
+
+

@@ -4,10 +4,12 @@
 \alias{create_RRM_ecosystem}
 \title{Create RRM ecosystem information}
 \usage{
-create_RRM_ecosystem(vri_bem)
+create_RRM_ecosystem(vri_bem, raster_res = NULL)
 }
 \arguments{
 \item{vri_bem}{VRI-BEM feature class}
+
+\item{raster_res}{numeric vector , resolution of raster example c(25,25)}
 }
 \value{
 Summary of Area by unique ecosystem
@@ -28,7 +30,7 @@ For each of the following combination compute the sum of the area
 \item SLOPE_MOD
 \item SITE_M3A
 \item SNOW_CODE
-\item ABOVE_ELEV
+\item ABOVE_ELEV_THOLD
 \item CROWN_MOOSE (CROWN_MOOSE_1, CROWN_MOOSE_2, CROWN_MOOSE_3)
 \item STRCT (STRCT_S1, STRCT_S2, STRCT_S3)
 \item STAND (STAND_A1, STAND_A2, STAND_A3)
