@@ -10,12 +10,26 @@ knitr::opts_chunk$set(
 ```
 
 
+# Update Functions Documentation 
+
+Each function has its own documentation right at the top of its code. It consists mainly of a description of the parameters and details of what is the expected output. For some references you can look at the documentation of the [roxygen2](https://roxygen2.r-lib.org/index.html) package. 
+
+Once you added or modified that text above the functions you can run one of the following so that R can create its internal documentation. This is what you see when you look for the `help()` of a function inside RStudio.   
+
+- `devtools::document()`
+- `roxygen2::roxygenise()`
+- RStudio Shortcut (CTRL + SHIFT + D)
+
+
+
+# Update Website Documentation
+
 Here is a quick recap of how to update the documentation in this repo:
 
-1. Update Function documentation 
-    - run `devtools::document()` or RStudio Shortcut (CTRL + SHIFT + D)
+1. Update function documentation 
+  
     
 2. Update website (pkgdown) documentation 
     - run `pkgdown::build_site()`
 
-3. Commit and push all those changes to GitHub and let GitHub do its magic to deploy the package documentation website
+3. Commit and push all the changes to GitHub and let GitHub do its magic to deploy the package documentation website

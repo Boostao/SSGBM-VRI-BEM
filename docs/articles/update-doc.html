@@ -61,7 +61,14 @@
   <a href="../news/index.html">Changelog</a>
 </li>
       </ul>
-<ul class="nav navbar-nav navbar-right"></ul>
+<ul class="nav navbar-nav navbar-right">
+<li>
+  <a href="https://github.com/bcgov/SSGBM-VRI-BEM/" class="external-link">
+    <span class="fab fa-github fa-lg"></span>
+     
+  </a>
+</li>
+      </ul>
 </div>
 <!--/.nav-collapse -->
   </div>
@@ -77,33 +84,47 @@
       <h1 data-toc-skip>How to update documentation</h1>
             
       
-      
+      <small class="dont-index">Source: <a href="https://github.com/bcgov/SSGBM-VRI-BEM/blob/HEAD/vignettes/articles/update-doc.Rmd" class="external-link"><code>vignettes/articles/update-doc.Rmd</code></a></small>
       <div class="hidden name"><code>update-doc.Rmd</code></div>
 
     </div>
 
     
     
+<div class="section level2">
+<h2 id="update-functions-documentation">Update Functions Documentation<a class="anchor" aria-label="anchor" href="#update-functions-documentation"></a>
+</h2>
+<p>Each function has its own documentation right at the top of its code. It consists mainly of a description of the parameters and details of what is the expected output. For some references you can look at the documentation of the <a href="https://roxygen2.r-lib.org/index.html" class="external-link">roxygen2</a> package.</p>
+<p>Once you added or modified that text above the functions you can run one of the following so that R can create its internal documentation. This is what you see when you look for the <code>help()</code> of a function inside RStudio.</p>
+<ul>
+<li><code><a href="https://devtools.r-lib.org/reference/document.html" class="external-link">devtools::document()</a></code></li>
+<li><code><a href="https://roxygen2.r-lib.org/reference/roxygenize.html" class="external-link">roxygen2::roxygenise()</a></code></li>
+<li>RStudio Shortcut (CTRL + SHIFT + D)</li>
+</ul>
+</div>
+<div class="section level2">
+<h2 id="update-website-documentation">Update Website Documentation<a class="anchor" aria-label="anchor" href="#update-website-documentation"></a>
+</h2>
 <p>Here is a quick recap of how to update the documentation in this repo:</p>
 <ol style="list-style-type: decimal">
-<li>Update Function documentation
-<ul>
-<li>run <code><a href="https://devtools.r-lib.org/reference/document.html" class="external-link">devtools::document()</a></code> or RStudio Shortcut (CTRL + SHIFT + D)</li>
-</ul>
-</li>
-<li>Update website (pkgdown) documentation
+<li><p>Update function documentation</p></li>
+<li>
+<p>Update website (pkgdown) documentation</p>
 <ul>
 <li>run <code><a href="https://pkgdown.r-lib.org/reference/build_site.html" class="external-link">pkgdown::build_site()</a></code>
 </li>
 </ul>
 </li>
-<li>Commit and push all those changes to GitHub and let GitHub do its magic to deploy the package documentation website</li>
+<li><p>Commit and push all the changes to GitHub and let GitHub do its magic to deploy the package documentation website</p></li>
 </ol>
 </div>
+  </div>
 
   <div class="col-md-3 hidden-xs hidden-sm" id="pkgdown-sidebar">
 
-      </div>
+        <nav id="toc" data-toggle="toc"><h2 data-toc-skip>Contents</h2>
+    </nav>
+</div>
 
 </div>
 
@@ -111,7 +132,7 @@
 
       <footer><div class="copyright">
   <p></p>
-<p>Developed by Nicolas Gauthier, François Bornais, Province of British Columbia.</p>
+<p>Developed by Karine Pigeon, Nicolas Gauthier, François Bornais, Province of British Columbia.</p>
 </div>
 
 <div class="pkgdown">
