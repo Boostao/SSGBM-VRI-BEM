@@ -2,7 +2,8 @@ Package: SSGBM.VRI.BEM
 Title: Vegetation Resource Inventory & Broad Ecosystem Mapping
 Version: 0.0.2
 Authors@R: c(
-    person("Nicolas", "Gauthier", email = "nicolas@boostao.ca", role = c("aut", "cre"),
+    person("Karine", "Pigeon", email = "Karine.Pigeon@gov.bc.ca", role = c("cre")),
+    person("Nicolas", "Gauthier", email = "nicolas@boostao.ca", role = c("aut"),
        comment = c(ORCID = "0000-0003-0642-4130")),
     person("François", "Bornais", email = "francois@boostao.ca", role = c("aut"),
        comment = c(ORCID = "0000-0002-8676-759X")),
@@ -18,12 +19,14 @@ Imports:
   terra, 
   units,
   bcdata
+Depends: 
+    R (>= 2.10)
+LazyData: true
 License: file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.2
 Suggests: 
     rmarkdown
-Depends: 
-    R (>= 2.10)
-LazyData: true
+URL:
+  https://github.com/bcgov/SSGBM-VRI-BEM
