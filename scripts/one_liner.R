@@ -500,3 +500,5 @@ test_out <- create_RRM_ecosystem_from_rasters(vri_dsn = "../SSGBM-VRI-BEM-data/v
                                   elevation_threshold = 1400,
                                   wkt_filter = aoi_filter,
                                   n_iterations = 1)
+
+

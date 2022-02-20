@@ -38,7 +38,7 @@
 #'
 #' @return Summary of Area by unique ecosystem
 #' @import data.table
-#' @importFrom terra rast extract vect `add<-
+#' @importFrom terra rast extract vect `add<-`
 #' @export
 #'
 create_RRM_ecosystem_from_rasters <- function(vri_dsn = dsn, bem_dsn = dsn, rivers_dsn = dsn, wetlands_dsn = dsn, ccb_dsn = dsn, elevation_dsn,
@@ -156,7 +156,7 @@ create_RRM_ecosystem_from_rasters <- function(vri_dsn = dsn, bem_dsn = dsn, rive
     return(RRM_ecosystem_list[[1]])
   }
   else {
-    return(rbindlist(RRM_ecosystem_list)[, .(Hectares = sum(Hectares)),
+    return(rbindlist(RRM_ecosystem_list)[, .(Hectares = sum(Hectares), cells = list(unlist(cells))),
                                          by = list(ECO_SEC, BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC, SLOPE_MOD, SITE_M3A,
                                                    SNOW_CODE, ABOVE_ELEV_THOLD, CROWN_MOOSE, STRCT, STAND, FORESTED)])
   }
