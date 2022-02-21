@@ -9,10 +9,16 @@ This repository is for a Python to R script conversion for the VRI-BEM (vegetati
 Install the latest development version (on GitHub) via `{remotes}`:
 
 ``` r
+# install.packages("remotes")
 remotes::install_github("bcgov/SSGBM-VRI-BEM")
-```
 
-## Contributing
+```
+## Getting Started
+
+You can see how to get started with the ssgbm package in the [Getting Started article](https://bcgov.github.io/SSGBM-VRI-BEM/articles/getting_started.html)
+
+
+## License
 
 Copyright 2021 Province of British Columbia
 

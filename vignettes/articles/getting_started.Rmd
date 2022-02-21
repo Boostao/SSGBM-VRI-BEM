@@ -1,0 +1,173 @@
+---
+title: "Getting Started"
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+The purpose of this article is to help a user get started with the ssgbm package
+
+# Goal of the ssgbm package
+
+The goal of the ssgbm package is to create a file that can be use to run the RRM model.
+
+This file is created by merging the following layers together
+
+- VRI (vegetation ressource inventory [documentation](https://www2.gov.bc.ca/assets/gov/farming-natural-resources-and-industry/forestry/stewardship/forest-analysis-inventory/data-management/standards/vegcomp_poly_rank1_data_dictionaryv5_2019.pdf))
+
+- TEI (Terrestrial Ecosystem Information [documentation](https://www2.gov.bc.ca/assets/gov/environment/plants-animals-and-ecosystems/ecosystems/terrestrial-ecosystem/tei_digital_submission_standards_draft1.pdf)) with BEU fields (Broad Terrestrial Ecosystem [documentation](https://www2.gov.bc.ca/assets/gov/environment/natural-resource-stewardship/nr-laws-policy/risc/bei.pdf))
+
+- Wetlands
+
+- Rivers
+
+- Consolidated Cutblocks
+
+- Elevation
+
+The resulting feature class is usually refereed to as the vri-bem
+
+```{r , echo=FALSE, fig.cap="A caption", out.width = '100%'}
+knitr::include_graphics("../layer_merge.PNG")
+```
+
+Once the layers are merged together, some corrections are done on the TEI attributes based on the VRI attributes, the intersections with rivers and the percentage of the polygon covered by wetlands.
+Some of the corrections are done by using the csv files in the csv directory
+
+- Allowed_BEC_BEUs_NE_ALL
+- beu_wetland_updates
+
+After all the correction on the TEI attributes have been done, some new attributes are created based on the elevation and the slope.
+Also, the forest age is computed using the consolidated cut blocks layer.
+
+Following the creation of those new attributes, several new attributes (see below) of the ecosystem are merged on the vri-bem using the Skeena_VRIBEM_LUT csv file.
+
+- Forested (Y/N),
+- Strict_Climax,
+- Stand_Climax,
+- Stand_Age_0-15, Stand_Age_16-30, Stand_Age_31-50, Stand_Age_51-80, Stand_Age_80+,
+- Struct_Age_0-3, Struct_Age_4-10, Struct_Age_11-30, Struct_Age_31-40, Struct_Age_41-60, Struct_Age_61-80, Struct_Age_81-139, Struct_Age_140_249, Struct_Age_250+,
+- Snow_code
+
+If you are running the ssgbm package on a new area for the first time, you will need to create and fill this csv file so that you are able to create the desired output file (this article will cover that part later).
+
+Before creating the final output file, the STD_VRI, CROWN_BEAR and CROWN_MOOSE are created based on the type of species and the crown closure of the ecosystem.
+
+Finally, the output file needed for using the RRM model is created by aggregating all the possible combination of the following attributes together
+
+- ECO_SEC
+- BGC_ZONE
+- BGC_SUBZON
+- BGC_VRT
+- BGC_PHASE
+- BEUMC  (BEUMC_S1, BEUMC_S2, BEUMC_S3)
+- SLOPE_MOD
+- SITE_M3A
+- SNOW_CODE
+- ABOVE_ELEV_THOLD
+- CROWN_MOOSE (CROWN_MOOSE_1, CROWN_MOOSE_2, CROWN_MOOSE_3)
+- STRCT (STRCT_S1, STRCT_S2, STRCT_S3)
+- STAND (STAND_A1, STAND_A2, STAND_A3)
+- FORESTED (FORESTED_1, FORESTED_2, FORESTED_3)
+
+
+The following sections of this article will cover in more details how you can achieve all the above using the ssgbm package.
+
+We suggest reading all the sections before jumping in the good stuff. However, if you are too eager to try the ssgbm package, you can get good starting points from the R files in the scripts folder of the [github repositery](https://github.com/bcgov/SSGBM-VRI-BEM/tree/main/scripts) 
+
+# Getting all the required layers
+
+The first step required to be able to use the ssgbm functions is to get all the required layers.
+
+Most layers are available publicly and can be downloaded from the [bcgov catalogue](https://catalogue.data.gov.bc.ca/) (you will probably prefer this option if you want to work with raster see the [Rasterizing Layers of interest] section)
+
+Note that the BEU fields (Broad Terrestrial Ecosystem [documentation](https://www2.gov.bc.ca/assets/gov/environment/natural-resource-stewardship/nr-laws-policy/risc/bei.pdf)) and elevation layers are not available publicly.
+
+However, all the other layers can also be imported into R using via the bcdata package. Fortunately, the ssgbm package has functions to help you import those layers more easily (see the [Read_layer functions] section).
+
+## Read_layer functions
+
+All the layers of interest (except the TEI+BEU and elevation) can be imported via the read_layer functions.
+The read_layer also accept a well-known text filter, if you only want to import a region of interest 
+
+```{r read_layers, eval = FALSE}
+aoi <- "POLYGON ((1023955 988730.2, 1065018 988730.2, 1065018 1016988, 1023955 1016988, 1023955 988730.2))"
+vri <- read_vri(wkt_filter = aoi)
+rivers <- read_rivers(wkt_filter = aoi_wkt)
+wetlands <- read_wetlands(wkt_filter = aoi_wkt)
+ccb <- read_ccb(wkt_filter = aoi_wkt)
+
+```
+
+you can learn more about each of the read_layer by using the help command
+
+```{r read_layers_help, eval = FALSE}
+help(read_vri)
+```
+
+or by via the [Reference tab of the documentation](https://bcgov.github.io/SSGBM-VRI-BEM/reference/index.html).
+
+## Rasterizing the Layers of Interest
+
+The ssgbm package support the use of rasters as input for the creation of the RRM file. 
+However there is no readily available rasters of the layers needed for the creation of the RRM file, that means that you will need to create them yourself.
+Don't worry, the ssgbm package can help you with that!
+
+First, you need to know that you will be be working with pretty big files, that means that you probably won't be able to load all those files in the computer memory (RAM) unless you are using cloud computing or have access to a computer with lots of RAM. Fortunately, the ssgbm package make use of the gdal utilities directly to create the raster files so that you don't need to load anything in the computer memory.
+That also mean that you will need to have a copy of all the layers of interest saved somewhere on your disk to use the rasterize feature of the ssgbm package. That's why it's preferable to download the layers directly from the [bcgov catalogue](https://catalogue.data.gov.bc.ca/) instead of using the read_layer functions (because you would need to load the layers in memory before being able to save them on your disk)
+
+The function used to create a raster from a geospatial vector data (a geospatial database with geometries (points, lines, polygon, etc)) is `rasterize_sf`
+
+To transform a geospatial vector data to a raster, `rasterize_sf` needs the following information
+
+- `src_datasource` The path of the geospatial vector data you want to convert into a raster (example "C:/geodata/vri.gbd") 
+- `dst_filename` The path of the resulting raster you want to create (example "C:/geodata/vri_raster.tif")
+- `layer` If your datasource is geospatial database with multiple layers, you need to specify the layer you want to convert into a raster, if you want to convert all the layers, simply run the function multiple time by specifying the desired layer each time.
+- The raster attributes can be specify in two ways
+  + `reference` The path of the raster you want to your new raster to be based on (will use the same crs , same extent and same resolution as the reference raster)
+  + `a_srs` `te` `tr` Specify the crs, extent and resolution of your new raster directly
+- `numeric_attributes` The name of the attributes of type numeric you want to add your raster, `rasterize_sf` creates one layer per attributes
+- `character_attributes` The name of the attributes of type character you want to add your raster, `rasterize_sf` creates one layer per attributes. Note that if you want to rasterize character attributes you also need to pass a `factor_conv_list` to tell `rasterize_sf` what values to burn in the raster (will get to that in more details later [Character Attributes]) 
+- `date_attributes` The name of the attributes of type date you want to add your raster, `rasterize_sf` creates one layer per attributes
+- `burn` The name of the raster layer, if you want create a layer that contains 1 where the polygons of the source geospatial vector data intersect with the extent of your raster (useful for creating a raster for the position of rivers for example)
+
+```{r rasterize_example_1, eval = FALSE}
+rasterize_sf("../SSGBM-VRI-BEM-data/BEM_VRI", "../SSGBM-VRI-BEM-data/bem_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", numeric_attributes = c("TEIS_ID", "SDEC_1"), layer = "BEM")
+````
+
+Once again you can get more information by using the help command
+
+```{r rasterize_help, eval = FALSE}
+help(rasterize_sf)
+```
+
+or by via the [Reference tab of the documentation](https://bcgov.github.io/SSGBM-VRI-BEM/reference/index.html).
+
+
+### Character Attributes
+
+By design, rasters are made to only contain numeric values. That means that if you want to create a raster layer for a character attribute from  a geospatial vector data you need to tell `rasterize_sf` what values to burn in the raster for all possible character values that this attribute can take. `rasterize_sf` expect a list containing data.table objects with the mapping for each character attributes you want to rasterize.
+
+for example, if I had an attributes called "TYPE" that could take the following values : "good", "ok", "bad"
+I would create the following data.table to map numeric values for each of the possible values
+
+```{r char_att_example}
+library(data.table)
+type_mapping <- data.table(value = c(NA_character_, "good", "ok", "bad"))
+type_mapping[, factor := 0:(.N-1)]
+
+type_mapping
+```
+
+Note that we assign the value 0 to the possibility NA_character_. It's because 0 is the default value for raster when there is no information for a raster cell
+
+Now that we have a data.table for the mapping of our variable we use `rasterize_sf` to create a raster layer for this variable based on the mapping we have written in the data.table
+
+```{r rasterize_example_2, eval = FALSE}
+rasterize_sf("../SSGBM-VRI-BEM-data/BEM_VRI", "../SSGBM-VRI-BEM-data/bem_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", numeric_attributes = c("TEIS_ID", "SDEC_1"),
+             character_attributes = "TYPE",factor_conv_list = list(TYPE = type_mapping) , layer = "BEM")
+````

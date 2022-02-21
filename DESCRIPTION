@@ -1,4 +1,4 @@
-Package: SSGBM.VRI.BEM
+Package: ssgbm
 Title: Vegetation Resource Inventory & Broad Ecosystem Mapping
 Version: 0.0.2
 Authors@R: c(
