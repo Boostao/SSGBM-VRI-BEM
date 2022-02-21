@@ -501,4 +501,16 @@ test_out <- create_RRM_ecosystem_from_rasters(vri_dsn = "../SSGBM-VRI-BEM-data/v
                                   wkt_filter = aoi_filter,
                                   n_iterations = 1)
 
+test_out[, rrm := sample(1:3, .N , replace = T)]
+
+ref_rast <- rast("../elev_test.tif")
+
+rrm_rast <- writeRaster(raster(nrows = nrow(ref_rast), ncols = ncol(ref_rast), xmn = ext(ref_rast)[1], xmx = ext(ref_rast)[2], ymn = ext(ref_rast)[3], ymx = ext(ref_rast)[4], crs = crs(ref_rast, proj = T), resolution = res(ref_rast), vals = 0),"../rrm_test.tif", overwrite = T)
+
+write_dt <- test_out[area_sum > 0 , .(cell = list(unlist(cell))), keyby = rrm]
+
+for (i in 1:nrow(write_dt)) {
+  rrm_rast <- update(rrm_rast, rep(write_dt$rrm[i], length(unlist(write_dt$cell[i]))), cell = unlist(write_dt$cell[i]))
+}
+plot(rrm_rast)
 
