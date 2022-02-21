@@ -23,7 +23,7 @@
 update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE, raster_res = NULL) {
 
   vri_bem <- correct_bem_from_vri(vri_bem = vri_bem, rivers = rivers, beu_bec = beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE, raster_res = raster_res)
-  vri_bem <- find_intersection_with_rivers(vri_bem, rivers)
+  vri_bem <- find_intersection_with_rivers(vri_bem, rivers, raster= !is.null(raster_res))
 
   return(vri_bem)
 

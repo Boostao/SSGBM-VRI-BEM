@@ -105,7 +105,7 @@ create_RRM_ecosystem_from_rasters <- function(vri_dsn = dsn, bem_dsn = dsn, rive
     if (verbose) {
       message("correction of bem attributes based on vri attributes")
     }
-    vri_bem <- correct_bem_from_vri(vri_bem = vri_bem, beu_bec = beu_bec_csv, clear_site_ma = clear_site_ma, use_ifelse = use_ifelse, raster_res = res(vri))
+    vri_bem <- update_bem_from_vri(vri_bem = vri_bem, beu_bec = beu_bec_csv, clear_site_ma = clear_site_ma, use_ifelse = use_ifelse, raster_res = res(vri))
 
 
     if (verbose) {
