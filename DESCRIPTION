@@ -18,7 +18,8 @@ Imports:
   sf,
   terra, 
   units,
-  bcdata
+  bcdata, 
+  gdalUtils
 Depends: 
     R (>= 2.10)
 LazyData: true

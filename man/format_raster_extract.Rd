@@ -7,7 +7,8 @@
 format_raster_extract(
   input_dt,
   character_attributes = NULL,
-  date_attributes = NULL
+  date_attributes = NULL,
+  factor_conv_list
 )
 }
 \arguments{
@@ -16,6 +17,8 @@ format_raster_extract(
 \item{character_attributes}{character vector that represent the attributes of type character that need to be transformed}
 
 \item{date_attributes}{character vector that represent the attributes of type date that need to be transformed}
+
+\item{factor_conv_list}{list of data.table that contains corresponding factor values for each variable that is not numeric}
 }
 \value{
 data.table

@@ -310,7 +310,7 @@ rasterize_ccb <- function(src_datasource, dst_filename, layer =  NULL, a_srs = N
 }
 
 
-#' Convert Broad ecosytem mapping to raster
+#' Convert Broad ecosystem mapping to raster
 #'
 #' Convert all attributes of interest of vri into raster layers
 #' @inheritParams rasterize_sf

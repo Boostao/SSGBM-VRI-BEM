@@ -4,10 +4,11 @@
 #' @param input_dt data.table extracted raster converted to data.table
 #' @param character_attributes character vector that represent the attributes of type character that need to be transformed
 #' @param date_attributes character vector that represent the attributes of type date that need to be transformed
+#' @param factor_conv_list list of data.table that contains corresponding factor values for each variable that is not numeric
 #' @return data.table
 #' @import data.table
 #' @export
-format_raster_extract <- function(input_dt, character_attributes = NULL, date_attributes = NULL) {
+format_raster_extract <- function(input_dt, character_attributes = NULL, date_attributes = NULL, factor_conv_list) {
   attributes_names <- names(input_dt)
   if (!is.null(character_attributes)) {
     for (char_att in character_attributes) {
@@ -16,8 +17,8 @@ format_raster_extract <- function(input_dt, character_attributes = NULL, date_at
         set(input_dt, j = char_att, value = rowSums(input_dt[, matching_att, with = F]))
         set(input_dt, j = matching_att, value = NULL)
       }
-      factor_dt <- get(char_att)
-      set(input_dt, j = char_att, value = factor_dt[["value"]][match(input_dt[[char_att]],factor_dt[["factor"]])])
+      set(input_dt, j = char_att, value = factor_conv_list[[char_att]][["value"]][match(input_dt[[char_att]],
+                                                                                        factor_conv_list[[char_att]][["factor"]])])
     }
   }
 
@@ -35,7 +36,7 @@ format_raster_extract <- function(input_dt, character_attributes = NULL, date_at
 #' Format the extraction of a the BEM raster
 #'
 #'
-#' @inheritParams
+#' @inheritParams format_raster_extract
 #' @return data.table
 #' @import data.table
 #' @export
@@ -49,14 +50,15 @@ format_bem_raster_extract <- function(input_dt, character_attributes = c("BGC_ZO
 
  format_raster_extract(input_dt = input_dt,
                        character_attributes = character_attributes,
-                       date_attributes = date_attributes)
+                       date_attributes = date_attributes,
+                       factor_conv_list = raster_conv$bem)
 
 }
 
 #' Format the extraction of a the VRI raster
 #'
 #'
-#' @inheritParams
+#' @inheritParams format_raster_extract
 #' @return data.table
 #' @import data.table
 #' @export
@@ -65,6 +67,7 @@ format_vri_raster_extract <- function(input_dt, character_attributes = c(paste0(
 
   format_raster_extract(input_dt = input_dt,
                         character_attributes = character_attributes,
-                        date_attributes = date_attributes)
+                        date_attributes = date_attributes,
+                        factor_conv_list = raster_conv$bem)
 
 }

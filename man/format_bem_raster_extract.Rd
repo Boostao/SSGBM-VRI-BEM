@@ -23,6 +23,13 @@ format_bem_raster_extract(
   date_attributes = "HRVSTDT"
 )
 }
+\arguments{
+\item{input_dt}{data.table extracted raster converted to data.table}
+
+\item{character_attributes}{character vector that represent the attributes of type character that need to be transformed}
+
+\item{date_attributes}{character vector that represent the attributes of type date that need to be transformed}
+}
 \value{
 data.table
 }

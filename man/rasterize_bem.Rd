@@ -2,7 +2,7 @@
 % Please edit documentation in R/rasterize_sf.R
 \name{rasterize_bem}
 \alias{rasterize_bem}
-\title{Convert Broad ecosytem mapping to raster}
+\title{Convert Broad ecosystem mapping to raster}
 \usage{
 rasterize_bem(
   src_datasource,
