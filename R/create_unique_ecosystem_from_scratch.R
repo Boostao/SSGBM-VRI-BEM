@@ -26,7 +26,6 @@
 #'
 #'
 #' @import data.table
-#' @import sf
 #' @export
 #'
 create_unique_ecosystem_from_scratch <- function(dsn, vri_dsn = dsn, bem_dsn = dsn, rivers_dsn = dsn, wetlands_dsn = dsn,

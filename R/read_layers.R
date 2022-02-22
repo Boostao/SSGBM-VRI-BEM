@@ -7,7 +7,7 @@
 #' @param layer layer name (varies by driver, may be a file name without extension); in case layer is missing, st_read will read the first layer of dsn, give a warning and (unless quiet = TRUE) print a message when there are multiple layers, or give an error if there are no layers in dsn. If dsn is a database connection, then layer can be a table name or a database identifier (see Id). It is also possible to omit layer and rather use the query argument.
 #' @param wkt_filter character; WKT representation of a spatial filter (may be used as bounding box, selecting overlapping geometries)
 #' @return sf object
-#' @import sf
+#' @importFrom sf st_read st_cast st_make_valid st_intersection st_as_sfc
 #' @importFrom bcdata bcdc_query_geodata filter collect INTERSECTS select  `%>%`
 #' @export
 read_vri <- function(dsn = NULL, layer = "VEG_R1_PLY_polygon", wkt_filter = NULL) {
@@ -67,14 +67,14 @@ read_vri <- function(dsn = NULL, layer = "VEG_R1_PLY_polygon", wkt_filter = NULL
 #'
 #' @inheritParams read_vri
 #' @return sf object
-#' @import sf
+#' @importFrom sf st_read st_make_valid
 #' @export
 read_bem <- function(dsn, layer = "BEM", wkt_filter = character(0)) {
   bem <- st_read(dsn = dsn, layer = layer, quiet = TRUE, wkt_filter = wkt_filter)
   #Restructure bem while waiting for real info
   bem <- rename_geometry(bem, "Shape")
   #make shape valid because ARCGIS draw polygon differently than sf
-  bem$Shape <- sf::st_make_valid(bem$Shape)
+  bem$Shape <- st_make_valid(bem$Shape)
   return(bem)
 }
 
@@ -86,7 +86,7 @@ read_bem <- function(dsn, layer = "BEM", wkt_filter = character(0)) {
 #'
 #' @inheritParams read_vri
 #' @return sf object
-#' @import sf
+#' @importFrom sf st_read st_make_valid
 #' @importFrom bcdata bcdc_query_geodata filter collect INTERSECTS select  `%>%`
 #' @export
 read_wetlands <- function(dsn = NULL, layer = "FWA_WETLANDS_POLY",  wkt_filter = character(0)) {
@@ -109,7 +109,7 @@ read_wetlands <- function(dsn = NULL, layer = "FWA_WETLANDS_POLY",  wkt_filter =
   #Restructure bem while waiting for real info
   wetlands <- rename_geometry(wetlands, "Shape")
   #make shape valid because ARCGIS draw polygon differently than sf
-  wetlands$Shape <- sf::st_make_valid(wetlands$Shape)
+  wetlands$Shape <- st_make_valid(wetlands$Shape)
   return(wetlands)
 }
 
@@ -120,7 +120,7 @@ read_wetlands <- function(dsn = NULL, layer = "FWA_WETLANDS_POLY",  wkt_filter =
 #'
 #' @inheritParams read_vri
 #' @return sf object
-#' @import sf
+#' @importFrom sf st_read st_make_valid
 #' @importFrom bcdata bcdc_query_geodata filter collect INTERSECTS select `%>%`
 #' @export
 read_rivers <- function(dsn = NULL, layer = "FWA_RIVERS_POLY",  wkt_filter = character(0)) {
@@ -141,7 +141,7 @@ read_rivers <- function(dsn = NULL, layer = "FWA_RIVERS_POLY",  wkt_filter = cha
     rivers <- st_read(dsn = dsn, layer = layer, quiet = TRUE, wkt_filter = wkt_filter)
   }
   #make shape valid because ARCGIS draw polygon differently than sf
-  rivers$GEOMETRY <- sf::st_make_valid(rivers$GEOMETRY)
+  rivers$GEOMETRY <- st_make_valid(rivers$GEOMETRY)
   return(rivers)
 }
 
@@ -151,7 +151,7 @@ read_rivers <- function(dsn = NULL, layer = "FWA_RIVERS_POLY",  wkt_filter = cha
 #'
 #' @inheritParams read_vri
 #' @return sf object
-#' @import sf
+#' @importFrom sf st_read st_make_valid
 #' @importFrom bcdata bcdc_query_geodata filter collect INTERSECTS select  `%>%`
 #' @export
 read_ccb <- function(dsn = NULL, layer = "CNS_CUT_BL_polygon",  wkt_filter = character(0)) {
@@ -173,7 +173,7 @@ read_ccb <- function(dsn = NULL, layer = "CNS_CUT_BL_polygon",  wkt_filter = cha
   }
 
   #make shape valid because ARCGIS draw polygon differently than sf
-  ccb$Shape <- sf::st_make_valid(ccb$Shape)
+  ccb$Shape <- st_make_valid(ccb$Shape)
   return(ccb)
 }
 

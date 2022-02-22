@@ -40,7 +40,6 @@
 #'
 #' @return Summary of Area by unique ecosystem
 #' @import data.table
-#' @import sf
 #' @importFrom terra terrain rast
 #' @export
 #'

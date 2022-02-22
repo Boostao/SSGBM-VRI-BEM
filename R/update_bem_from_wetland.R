@@ -21,7 +21,7 @@
 #'     - BGC_ZONE is one of the following : "CDF", "BWBS", "SWB", "ESSF", "ICH", "CWH", "SBPS", "SBS"
 #'
 #' @return sf object with corrections from wetlands
-#' @import sf
+#' @importFrom sf st_as_sf
 #' @import data.table
 #' @export
 update_bem_from_wetlands <- function(vri_bem, wetlands, buc) {
@@ -30,13 +30,16 @@ update_bem_from_wetlands <- function(vri_bem, wetlands, buc) {
   vri_bem <- merge_wetlands(vri_bem = vri_bem, wetlands = wetlands)
 
   # make correction on bem from wetlands csv
-  vri_bem <- correct_bem_from_wetlands(vri_bem = vri_bem, wetlands = wetlands, buc = buc)
+  vri_bem <- correct_bem_from_wetlands(vri_bem = vri_bem, buc = buc)
 
   return(st_as_sf(vri_bem))
 
 }
 
-#' @inheritParams read_vri
+#' Merge wetlands into VRI-BEM
+#'
+#' @inheritParams update_bem_from_wetlands
+#' @importFrom sf st_intersection st_area
 #' @return data.table object
 merge_wetlands <- function(vri_bem, wetlands) {
   setDT(vri_bem)
@@ -54,7 +57,8 @@ merge_wetlands <- function(vri_bem, wetlands) {
 
 }
 
-#' @inheritParams read_vri
+#' Correct BEM attributes based on Wetlands
+#' @inheritParams update_bem_from_wetlands
 #' @return sf object
 correct_bem_from_wetlands <- function(vri_bem, buc) {
   setDT(vri_bem)

@@ -5,31 +5,33 @@
 #' @param src_datasource character, path of source file
 #' @param dst_filename character, path of destination file
 #' @param layer character, name of the layer of interest
-#' @param a_srs Character. (GDAL >= 1.8.0) Override the projection for the output file. If not specified, the projection of the input vector file will be used if available. If incompatible projections between input and output files, no attempt will be made to reproject features. The srs_def may be any of the usual GDAL/OGR forms, complete WKT, PROJ.4, EPSG:n or a file containing the WKT.
-#' @param te Numeric. c(xmin,ymin,xmax,ymax) (GDAL >= 1.8.0) set georeferenced extents. The values must be expressed in georeferenced units. If not specified, the extent of the output file will be the extent of the vector layers.
-#' @param tr Numeric. c(xres,yres) (GDAL >= 1.8.0) set target resolution. The values must be expressed in georeferenced units. Both must be positive values.
 #' @param reference character of SpatRaster, will be used as reference raster for extent, resolution and crs
 #' @param numeric_attributes character vector of names of attributes of type numeric
 #' @param character_attributes character vector of names of attributes of type character
 #' @param date_attributes character vector of names of attributes of type date
+#' @param factor_conv_list list of data.table that contains corresponding factor values for each variable that is not numeric
 #' @param burn character, create a layer with the name of the "burn" argument which burn the value 1 where polygons intersect with the extent of the raster
 #' @param output_raster boolean, if TRUE, the resulting raster will be returned
 #' @param verbose boolean, if TRUE progression message will be printed
+#' @inheritParams gdalUtils::gdal_rasterize
 #' @return SpatRaster if output_raster is TRUE, NULL otherwise
 #' @importFrom terra `add<-` crs ext rast writeRaster res
 #' @importFrom gdalUtils gdal_rasterize
 #' @importFrom sf st_layers
 #' @export
-rasterize_sf <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NULL, te = NULL, tr = NULL, reference = NULL, numeric_attributes = NULL, character_attributes = NULL, date_attributes = NULL, burn = NULL, output_raster = FALSE, verbose = TRUE) {
+rasterize_sf <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NULL, te = NULL, tr = NULL, reference = NULL,
+                         numeric_attributes = NULL, character_attributes = NULL, date_attributes = NULL, factor_conv_list = NULL,
+                         burn = NULL, output_raster = FALSE, verbose = TRUE) {
 
   # if provided use parameters from reference raster
   if (!is.null(reference)) {
-    if (class(reference) == "character") {
+
+    if (inherits(reference, "character")) {
       ref_raster <- rast(reference)
-    }
-    else {
+    } else {
       ref_raster <- reference
     }
+
     a_srs <- crs(ref_raster, proj = T)
     extent <- ext(ref_raster)
     te <- c(extent[1], extent[3], extent[2], extent[4])
@@ -46,7 +48,7 @@ rasterize_sf <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NU
   dst_file_extension <- ifelse(pos > -1L, substring(dst_filename, pos + 1L), "")
   dst_file_no_ext <- substr(dst_filename, 1 , nchar(dst_filename) - (nchar(dst_file_extension) +1))
 
-  # creat temp dst_file for all attributes
+  # create temp dst_file for all attributes
   dst_filename_att <- character(0)
   layers_names <- character(0)
 
@@ -71,7 +73,8 @@ rasterize_sf <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NU
   # create temp raster file for character attributes
   if (!is.null(character_attributes)) {
     for (i in seq.int(along.with = character_attributes)) {
-      factor_dt <- tryCatch(expr = get(character_attributes[i])[!is.na(value)], error = function(x) message(paste0(x, ", skipping layer")))
+      factor_dt <- tryCatch(expr = factor_conv_list[[character_attributes[i]]][!is.na(value)],
+                            error = function(x) message(paste0(x, ", skipping layer")))
       if (!is.null(factor_dt)) {
         if (nrow(factor_dt) > 0) {
           if (nrow(factor_dt) <= 30) {
@@ -217,6 +220,7 @@ rasterize_vri <- function(src_datasource, dst_filename, layer =  NULL, a_srs = N
                numeric_attributes = numeric_attributes,
                character_attributes = character_attributes,
                date_attributes = date_attributes,
+               factor_conv_list = raster_conv$vri,
                burn = burn,
                output_raster = output_raster,
                verbose = verbose)
@@ -339,6 +343,7 @@ rasterize_bem <- function(src_datasource, dst_filename, layer =  NULL, a_srs = N
                numeric_attributes = numeric_attributes,
                character_attributes = character_attributes,
                date_attributes = date_attributes,
+               factor_conv_list = raster_conv$bem,
                burn = burn,
                output_raster = output_raster,
                verbose = verbose)

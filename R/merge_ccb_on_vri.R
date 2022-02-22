@@ -5,7 +5,7 @@
 #' @param vri_bem sf object that represent VRI (vegetation ressource inventory) features
 #' @param ccb sf object that represent CCB (consolidated cutblock) features
 #' @return sf object that represent the intersections of ccb and vri
-#' @import sf
+#' @importFrom sf st_agr st_intersection
 #' @export
 merge_ccb_on_vri <- function(vri_bem, ccb) {
 

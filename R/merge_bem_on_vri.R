@@ -10,8 +10,8 @@
 #' This function output will be a copy of the VRI polygons clipped to the BEM, then exploded to single part, and its slivers will be eliminated.
 #' Its attribute table will have all of the BEM attribute fields added to the existing VRI attributes.
 #' The BEM attribute fields will be populated by copying the BEM values of the majority area BEM polygon within each VRI polygon.
-#' @import sf
 #' @import data.table
+#' @importFrom sf st_cast st_area st_intersection st_as_sf
 #' @importFrom units set_units
 #' @export
 merge_bem_on_vri <- function(vri, bem, return_intersection_dt = FALSE) {

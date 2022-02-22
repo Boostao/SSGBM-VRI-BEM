@@ -8,7 +8,7 @@
 #' @param raster boolean
 #' @return sf object containing VRI-BEM
 #' @import data.table
-#' @import sf
+#' @importFrom sf st_intersection st_area
 #' @export
 find_crown_area_dominant_values <- function(vri, bem, intersection_dt = NULL, raster = FALSE) {
 

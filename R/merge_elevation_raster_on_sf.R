@@ -28,10 +28,10 @@ merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_thresho
 
   vri_bem <- downscale_elevation(elev_raster = elev_raster,
                                  vri_bem = vri_bem,
-                                 elevation_threshold = elevation_threshold,
                                  terrain_raster = terrain_raster)
 
-   vri_bem <- compute_elevation_ind_and_slope_mod(vri_bem)
+   vri_bem <- compute_elevation_ind_and_slope_mod(vri_bem,
+                                                  elevation_threshold = elevation_threshold)
 
 
   return(st_as_sf(vri_bem))

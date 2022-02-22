@@ -16,20 +16,20 @@
 #'   * Update STAND_... based on species
 #'
 #' @return sf object which contains adjusted map codes
-#' @import sf
-#' @import data.table
 #' @export
 
 update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE, raster_res = NULL) {
 
-  vri_bem <- correct_bem_from_vri(vri_bem = vri_bem, rivers = rivers, beu_bec = beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE, raster_res = raster_res)
+  vri_bem <- correct_bem_from_vri(vri_bem = vri_bem, beu_bec = beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE, raster_res = raster_res)
   vri_bem <- find_intersection_with_rivers(vri_bem, rivers, raster= !is.null(raster_res))
 
   return(vri_bem)
 
 }
 
-#' @inheritParams read_vri
+#' Correct BEM attributes based on VRI attributes
+
+#' @inheritParams update_bem_from_vri
 #' @details
 #' This function performs some adjustments to BEM attributes based on VRI attributes :
 #'   * Combine together components with duplicated BEUMC
@@ -38,7 +38,7 @@ update_bem_from_vri <- function(vri_bem, rivers, beu_bec, clear_site_ma = TRUE, 
 #'   * Update STAND_... based on species
 #'
 #' @return sf object which contains adjusted map codes
-#' @import sf
+#' @importFrom sf st_area
 #' @import data.table
 correct_bem_from_vri <- function(vri_bem, beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE,  raster_res = NULL) {
   # TODO verify that FORESTED_1 and BEUMC_S1 are blank when needed

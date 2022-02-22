@@ -15,6 +15,7 @@ rasterize_sf(
   numeric_attributes = NULL,
   character_attributes = NULL,
   date_attributes = NULL,
+  factor_conv_list = NULL,
   burn = NULL,
   output_raster = FALSE,
   verbose = TRUE
@@ -40,6 +41,8 @@ rasterize_sf(
 \item{character_attributes}{character vector of names of attributes of type character}
 
 \item{date_attributes}{character vector of names of attributes of type date}
+
+\item{factor_conv_list}{list of data.table that contains corresponding factor values for each variable that is not numeric}
 
 \item{burn}{character, create a layer with the name of the "burn" argument which burn the value 1 where polygons intersect with the extent of the raster}
 
