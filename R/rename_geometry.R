@@ -3,7 +3,7 @@
 #' @param g sf object
 #' @param name name of new sf column
 #' @return sf object
-#' @importFrom sf st_geometry
+#' @importFrom sf st_geometry `st_geometry<-`
 #' @export
 rename_geometry <- function(g, name){
   current <- attr(g, "sf_column")

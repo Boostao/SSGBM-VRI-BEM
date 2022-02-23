@@ -5,6 +5,7 @@
 \title{Creates the RRM ecosystem outpout for skeena bear and moose model}
 \usage{
 create_RRM_ecosystem_from_rasters(
+  dsn,
   vri_dsn = dsn,
   bem_dsn = dsn,
   rivers_dsn = dsn,
@@ -24,6 +25,9 @@ create_RRM_ecosystem_from_rasters(
 )
 }
 \arguments{
+\item{dsn}{data source name (interpretation varies by driver - for some drivers, dsn is a file name, but may also be a folder, or contain the name and access credentials of a database);
+in case of GeoJSON, dsn may be the character string holding the geojson data. It can also be an open database connection.}
+
 \item{vri_dsn}{dsn for vri layer, default to dsn if empty}
 
 \item{bem_dsn}{dsn for bem layer, default to dsn if empty}

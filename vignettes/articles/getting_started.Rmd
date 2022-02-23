@@ -32,7 +32,7 @@ This file is created by merging the following layers together
 The resulting feature class is usually refereed to as the vri-bem
 
 ```{r , echo=FALSE, fig.cap="A caption", out.width = '100%'}
-knitr::include_graphics("../layer_merge.PNG")
+knitr::include_graphics("layer_merge.PNG")
 ```
 
 Once the layers are merged together, some corrections are done on the TEI attributes based on the VRI attributes, the intersections with rivers and the percentage of the polygon covered by wetlands.

@@ -7,7 +7,7 @@
 #' @param layer layer name (varies by driver, may be a file name without extension); in case layer is missing, st_read will read the first layer of dsn, give a warning and (unless quiet = TRUE) print a message when there are multiple layers, or give an error if there are no layers in dsn. If dsn is a database connection, then layer can be a table name or a database identifier (see Id). It is also possible to omit layer and rather use the query argument.
 #' @param wkt_filter character; WKT representation of a spatial filter (may be used as bounding box, selecting overlapping geometries)
 #' @return sf object
-#' @importFrom sf st_read st_cast st_make_valid st_intersection st_as_sfc
+#' @importFrom sf st_read st_cast st_make_valid st_intersection st_as_sfc `st_agr<-` st_crs
 #' @importFrom bcdata bcdc_query_geodata filter collect INTERSECTS select  `%>%`
 #' @export
 read_vri <- function(dsn = NULL, layer = "VEG_R1_PLY_polygon", wkt_filter = NULL) {

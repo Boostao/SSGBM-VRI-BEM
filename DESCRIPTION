@@ -22,7 +22,6 @@ Imports:
   gdalUtils
 Depends: 
     R (>= 2.10)
-LazyData: true
 License: file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

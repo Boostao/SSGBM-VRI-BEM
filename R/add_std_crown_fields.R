@@ -20,7 +20,7 @@ add_std_crown_fields <- function(vri) {
                  "GP", "MB", "MB", "MV", "Q", "QG", "XH", "V", "VB", "VP", "W", "WS", "WA", "WB", "WD", "WP", "WT")
 
   # maybe find a better variable name if we can figure out what b_species are
-  #TODO : make sure that SPEC_PCT_ ... are numeric when loading the VRIs
+  #TODO : make sure that SPEC_PCT_ ... are numeric when loading the VRIs instead of here
   vri[ , pct_in_species_1 := (SPEC_CD_1 %in% b_species) * as.numeric(SPEC_PCT_1)]
   vri[ , pct_in_species_2 := (SPEC_CD_2 %in% b_species) * as.numeric(SPEC_PCT_2)]
   vri[ , pct_in_species_3 := (SPEC_CD_3 %in% b_species) * as.numeric(SPEC_PCT_3)]
