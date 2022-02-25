@@ -136,7 +136,7 @@ To transform a geospatial vector data to a raster, `rasterize_sf` needs the foll
 - `burn` The name of the raster layer, if you want create a layer that contains 1 where the polygons of the source geospatial vector data intersect with the extent of your raster (useful for creating a raster for the position of rivers for example)
 
 ```{r rasterize_example_1, eval = FALSE}
-rasterize_sf("../SSGBM-VRI-BEM-data/BEM_VRI", "../SSGBM-VRI-BEM-data/bem_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", numeric_attributes = c("TEIS_ID", "SDEC_1"), layer = "BEM")
+rasterize_sf(src_datasource = "../SSGBM-VRI-BEM-data/BEM_VRI", dst_filename = "../SSGBM-VRI-BEM-data/bem_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", numeric_attributes = c("TEIS_ID", "SDEC_1"), layer = "BEM")
 ````
 
 Once again you can get more information by using the help command
@@ -168,6 +168,92 @@ Note that we assign the value 0 to the possibility NA_character_. It's because 0
 Now that we have a data.table for the mapping of our variable we use `rasterize_sf` to create a raster layer for this variable based on the mapping we have written in the data.table
 
 ```{r rasterize_example_2, eval = FALSE}
-rasterize_sf("../SSGBM-VRI-BEM-data/BEM_VRI", "../SSGBM-VRI-BEM-data/bem_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", numeric_attributes = c("TEIS_ID", "SDEC_1"),
+rasterize_sf(src_datasource = "../SSGBM-VRI-BEM-data/BEM_VRI", dst_filename = "../SSGBM-VRI-BEM-data/bem_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", numeric_attributes = c("TEIS_ID", "SDEC_1"),
              character_attributes = "TYPE",factor_conv_list = list(TYPE = type_mapping) , layer = "BEM")
 ````
+
+
+### Wrappers of rasterize_sf
+
+The ssgbm package contains several wrappers of `rasterize_sf` to facilitate the conversion to raster of the vector layers of interest
+
+-`rasterize_vri`
+-`rasterize_bem`
+-`rasterize_wetlands`
+-`rasterize_rivers`
+-`rasterize_ccb`
+
+Those functions all do the same thing as `rasterize_sf` but all the numeric_attributes, character_attributes, date_attributes and burn arguments have already been pre filled with the correct values for each layer of interest.
+
+For example, if you wanted to convert the vri layer into a raster having the same specifications as the elevation raster you would do
+
+```{r wrapper_rast_example, eval = FALSE}
+rasterize_vri(src_datasource = "../SSGBM-VRI-BEM-data/vri", dst_filename = "../SSGBM-VRI-BEM-data/vri_example.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
+````
+
+You can apply the same concept to the other layers.
+
+```{r wrapper_rast_example_2, eval = FALSE}
+rasterize_bem(src_datasource = "../SSGBM-VRI-BEM-data/bem", dst_filename = "../SSGBM-VRI-BEM-data/bem_example.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
+rasterize_wetlands(src_datasource = "../SSGBM-VRI-BEM-data/wetlands", dst_filename = "../SSGBM-VRI-BEM-data/wetlands_example.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
+rasterize_rivers(src_datasource = "../SSGBM-VRI-BEM-data/rivers", dst_filename = "../SSGBM-VRI-BEM-data/rivers_example.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
+rasterize_ccb(src_datasource = "../SSGBM-VRI-BEM-data/ccb", dst_filename = "../SSGBM-VRI-BEM-data/ccb_example.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
+
+````
+
+Once again you can get more information by using the help command
+
+```{r wrap_rasterize_help, eval = FALSE}
+help(rasterize_vri)
+```
+
+or by via the [Reference tab of the documentation](https://bcgov.github.io/SSGBM-VRI-BEM/reference/index.html).
+
+You have probably noticed that we didn't have to pass a `factor_conv_list` to `rasterize_vri` to make it work. However, the vri layer has character attributes, which means that `rasterize_sf` needs to know what values to assign to all possibles values for each of those character attributes (see [Character Attributes] to know why). The reason `rasterize_vri` did not need a `factor_conv_list`is because the ssgbm itself comes with a mapping for all the character attributes of the vri (that is also true for all the other layers of interest!).
+
+You can access the respective `factor_conv_list` for vri and bem with
+
+```{r fact_conv_list_example, eval = FALSE}
+library(ssgbm)
+
+raster_conv$vri
+raster_conv$bem
+````
+
+
+If you ever need to update the mapping for any character attributes or add a new mapping see [Update the packaged factor_conv_list]
+
+### Update the packaged factor_conv_list
+
+If you ever need to update the currently packaged `factor_conv_list` make sure to acknowledge the [contribution guide](https://bcgov.github.io/SSGBM-VRI-BEM/CONTRIBUTING.html) beforehand.
+
+The code that generates the `factor_conv_list` is stored in "data-raw/raster_conv.R"
+
+If you want to add a new possible value to an existing attributes simply search the attributes and add the new value at the end of existing vector.
+for example, if we wanted to add a new mapping for value "TEST" of the ECO_SEC attributes of the BEM layer we would go from
+
+```{r fact_conv_list_update_example_1, eval = FALSE}
+# ECO_SEC ----
+raster_conv$bem$ECO_SEC <- data.table(value = c(NA_character_, "BUB", "BAU", "NEU", "BUR", "NAU"))
+raster_conv$bem$ECO_SEC[, factor := 0:(.N-1)]
+
+````
+
+to
+
+```{r fact_conv_list_update_example_2, eval = FALSE}
+# ECO_SEC ----
+raster_conv$bem$ECO_SEC <- data.table(value = c(NA_character_, "BUB", "BAU", "NEU", "BUR", "NAU", "TEST"))
+raster_conv$bem$ECO_SEC[, factor := 0:(.N-1)]
+
+````
+
+When you add a new value to an existing mapping, we recommend that you add it at the end of the vector so that all the current mapping remain the same.
+
+Once you are happy with the changes that you made, make sure to save the file and then simply run the whole file so that your changes are reflected when the package is compiled.
+
+Note that you will need to re install the ssgbm package with the new version to have access to the changes that you made.
+
+# Create the Unique Ecosystem Csv File
+
+Once you have either loaded of converted into raster all the required layers, the next step is to create the unique ecosystem csv that will need to be filled in  
