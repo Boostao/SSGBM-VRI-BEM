@@ -10,9 +10,26 @@
 devtools::load_all()
 library(data.table)
 
-# read vri and bem layers
-vri <- read_vri("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY")
+# Read data ----
+use_bcdata <- FALSE # Set to TRUE if you what to use the VRI, rivers and wetlands from the BC data catalog also consider updating the aoi_wkt
+
+if (use_bcdata){
+  # Define an AOI:
+  aoi_wkt <- "POLYGON ((1023955 988730.2, 1065018 988730.2, 1065018 1016988, 1023955 1016988, 1023955 988730.2))"
+  vri <- read_vri(wkt_filter = aoi_wkt)
+  rivers <- read_rivers(wkt_filter = aoi_wkt)
+  wetlands <- read_wetlands(wkt_filter = aoi_wkt)
+} else {
+  vri <- read_vri("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY")
+  rivers <- read_rivers("../SSGBM-VRI-BEM-data/CodeWithUs.gdb")
+  wetlands <- read_wetlands("../SSGBM-VRI-BEM-data/CodeWithUs.gdb")
+
+}
+
 bem <- read_bem("../SSGBM-VRI-BEM-data/BEM_VRI")
+elev_rast <- terra::rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
+
+
 
 # 1a ----
 vri_bem <- merge_bem_on_vri(vri = vri,
@@ -27,8 +44,6 @@ vri_bem <- vri_bem[which(!is.na(vri_bem$TEIS_ID)),]
 
 # 1b ----
 beu_bec_csv <- fread("csv/Allowed_BEC_BEUs_NE_ALL.csv")
-rivers <- read_rivers("../SSGBM-VRI-BEM-data/CodeWithUs.gdb")
-
 vri_bem <- update_bem_from_vri(vri_bem = vri_bem,
                                rivers = rivers,
                                beu_bec = beu_bec_csv,
@@ -37,8 +52,6 @@ vri_bem <- update_bem_from_vri(vri_bem = vri_bem,
 
 #1c ----
 beu_wetland_update_csv <- fread("csv/beu_wetland_updates.csv")
-wetlands <- read_wetlands("../SSGBM-VRI-BEM-data/CodeWithUs.gdb")
-
 vri_bem <- update_bem_from_wetlands(vri_bem = vri_bem,
                                     wetlands = wetlands,
                                     buc = beu_wetland_update_csv)
@@ -50,8 +63,6 @@ fwrite(unique_eco, file = "../unique_ecosystem.csv")
 
 
 #3abc ----
-elev_rast <- terra::rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
-
 vri_bem <- merge_elevation_raster_on_sf(elev_raster = elev_rast,
                                         vri_bem = vri_bem,
                                         elevation_threshold = 1400)
