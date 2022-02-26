@@ -75,7 +75,7 @@ correct_bem_from_wetlands <- function(vri_bem, buc) {
                                                        "KIND_3", "SITE_S3", "SITEAM_S3A", "SITEAM_S3B", "SITEAM_S3C", "SITEAM_S3D", "SITEMC_S3",
                                                        "SITE_M3A", "SITE_M3B", "STRCT_S3", "STRCT_M3", "STAND_A3", "SERAL_3", "TREE_C3", "SHRUB_C3",
                                                        "DISTCLS_3", "DISTSCLS_3", "DISSSCLS_3", "SECL_3", "SESUBCL_3", "COND_3", "VIAB_3", "BGC_ZONE",
-                                                       "MEAN_SLOPE", "BCLCS_LV_4"))
+                                                       "MEAN_SLOPE", "BCLCS_LEVEL_4"))
 
   if (is.null(vri_bem[["Lbl_edit_wl"]])) {
     set(vri_bem , j = "Lbl_edit_wl", value = "")
@@ -147,7 +147,7 @@ correct_bem_from_wetlands <- function(vri_bem, buc) {
   # Allowed BEU codes adjustments (line 364) -----
   vri_bem[!(SDEC_1 >= 5 & BEUMC_S1 %in% c("BB", "CB", "CR", "ER", "RI", "PB", "PR", "RR", "RS", "SK", "SR", "TF",
                                           "WG", "WR", "YB", "YS", "BG", "FE", "MR", "OW", "SH", "SW", "BA", "LS", "LL")) &
-            !(SDEC_1 == 10 & BEUMC_S1 == "WL") & wl_pct >= 8 & !BCLCS_LV_4 %in% c("TB", "TC", "TM") &
+            !(SDEC_1 == 10 & BEUMC_S1 == "WL") & wl_pct >= 8 & !BCLCS_LEVEL_4 %in% c("TB", "TC", "TM") &
             curr_beu_code %in% buc$Code_Orig,
 
           new_beu_code:= fcase(wl_pct < 14, Code_WL1, # condition that wl_pct >= 8 is above

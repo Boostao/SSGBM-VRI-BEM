@@ -46,7 +46,7 @@ format_bem_raster_extract <- function(input_dt, character_attributes = c("BGC_ZO
                                                                          "DISTCLS_2",  "DISTSCLS_2", "DISSSCLS_2", "SECL_2",     "SESUBCL_2",  "COND_2",     "VIAB_2",     "FORESTED_2","TREE_C2", "SHRUB_C2", "BEUMC_S3",   "REALM_3",    "GROUP_3",   "CLASS_3",    "KIND_3",     "SITE_S3" ,   "SITEAM_S3A",
                                                                          "SITEAM_S3B", "SITEAM_S3C", "SITEAM_S3D", "SITEMC_S3",  "SITE_M3A",   "SITE_M3B",   "STRCT_S3",   "STRCT_M3",   "STAND_A3",   "SERAL_3",    "DISTCLS_3",  "DISTSCLS_3", "DISSSCLS_3", "SECL_3",     "SESUBCL_3",
                                                                          "COND_3", "VIAB_3", "FORESTED_3", "TREE_C3", "SHRUB_C3"),
-                                  date_attributes = "HRVSTDT") {
+                                  date_attributes = "HARVEST_DATE") {
 
  format_raster_extract(input_dt = input_dt,
                        character_attributes = character_attributes,
@@ -62,7 +62,7 @@ format_bem_raster_extract <- function(input_dt, character_attributes = c("BGC_ZO
 #' @return data.table
 #' @import data.table
 #' @export
-format_vri_raster_extract <- function(input_dt, character_attributes = c(paste0("BCLCS_LV_", 1:5), paste0("SPEC_CD_", 1:6), "LAND_CD_1", "LBL_VEGCOV"),
+format_vri_raster_extract <- function(input_dt, character_attributes = c(paste0("BCLCS_LEVEL_", 1:5), paste0("SPECIES_CD_", 1:6), "LAND_COVER_CLASS_CD_1", "LINE_5_VEGETATION_COVER"),
                                       date_attributes = NULL) {
 
   format_raster_extract(input_dt = input_dt,

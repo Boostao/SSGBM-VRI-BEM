@@ -474,19 +474,20 @@ while(x < 10) {
 
 
 #########################
+library(ssgbm)
 library(terra)
 elev_rast <- terra::rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
-terrain(elev_rast, v = c("slope", "aspect"), unit = "radians", filename = "../slope_aspect.tif", overwrite = T)
-slope_asp <- rast("../slope_aspect.tif ")
-add(elev_rast) <- slope_asp
+terra::terrain(elev_rast, v = c("slope", "aspect"), unit = "radians", filename = "../slope_aspect.tif", overwrite = T)
+slope_asp <- terra::rast("../slope_aspect.tif ")
+terra::add(elev_rast) <- slope_asp
 names(elev_rast) <- c("ELEV", "MEAN_SLOPE", "MEAN_ASP")
-writeRaster(elev_rast, "../elev_test.tif", overwrite = T)
+terra::writeRaster(elev_rast, "../elev_test.tif", overwrite = T)
 
-rasterize_bem("../SSGBM-VRI-BEM-data/BEM_VRI", "../SSGBM-VRI-BEM-data/bem_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "BEM")
-rasterize_vri("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY", "../SSGBM-VRI-BEM-data/vri_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "VEG_R1_PLY_polygon")
-rasterize_wetlands("../SSGBM-VRI-BEM-data/CodeWithUs.gdb", "../SSGBM-VRI-BEM-data/wetlands_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "FWA_WETLANDS_POLY")
-rasterize_rivers("../SSGBM-VRI-BEM-data/CodeWithUs.gdb", "../SSGBM-VRI-BEM-data/rivers_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "FWA_RIVERS_POLY")
-rasterize_ccb("../SSGBM-VRI-BEM-data/CodeWithUs.gdb", "../SSGBM-VRI-BEM-data/ccb_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "CNS_CUT_BL_polygon")
+rasterize_bem(src_datasource = "../SSGBM-VRI-BEM-data/BEM_VRI", dst_filename = "../SSGBM-VRI-BEM-data/bem_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "BEM")
+rasterize_vri(src_datasource = "../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY", dst_filename = "../SSGBM-VRI-BEM-data/vri_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "VEG_R1_PLY_polygon")
+rasterize_wetlands(src_datasource = "../SSGBM-VRI-BEM-data/CodeWithUs.gdb", dst_filename = "../SSGBM-VRI-BEM-data/wetlands_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "FWA_WETLANDS_POLY")
+rasterize_rivers(src_datasource = "../SSGBM-VRI-BEM-data/CodeWithUs.gdb", dst_filename = "../SSGBM-VRI-BEM-data/rivers_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "FWA_RIVERS_POLY")
+rasterize_ccb(src_datasource = "../SSGBM-VRI-BEM-data/CodeWithUs.gdb", dst_filename = "../SSGBM-VRI-BEM-data/ccb_test.tif", reference = "../SSGBM-VRI-BEM-data/DEM_tif/dem.tif", output_raster = F, layer = "CNS_CUT_BL_polygon")
 
 aoi_filter <- "POLYGON ((1023955 988730.2, 1065018 988730.2, 1065018 1016988, 1023955 1016988, 1023955 988730.2))"
 

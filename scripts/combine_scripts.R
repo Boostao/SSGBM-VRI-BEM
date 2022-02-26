@@ -8,6 +8,7 @@
 # invisible(lapply(list.files("R", full.names = TRUE), source))
 
 devtools::load_all()
+library(data.table)
 
 # read vri and bem layers
 vri <- read_vri("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY")

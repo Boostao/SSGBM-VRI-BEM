@@ -68,10 +68,10 @@ correct_bem_from_vri <- function(vri_bem, beu_bec, clear_site_ma = TRUE, use_ife
                                                        "KIND_3", "SITE_S3", "SITEAM_S3A", "SITEAM_S3B", "SITEAM_S3C", "SITEAM_S3D", "SITEMC_S3",
                                                        "SITE_M3A", "SITE_M3B", "STRCT_S3", "STRCT_M3", "STAND_A3", "SERAL_3", "TREE_C3", "SHRUB_C3",
                                                        "DISTCLS_3", "DISTSCLS_3", "DISSSCLS_3", "SECL_3", "SESUBCL_3", "COND_3", "VIAB_3", "SLOPE_MOD",
-                                                       "FORESTED_1", "FORESTED_2", "FORESTED_3", "BCLCS_LV_1", "BCLCS_LV_2", "BCLCS_LV_3",
-                                                       "BCLCS_LV_4", "BCLCS_LV_5", "SPEC_CD_1", "AGE_CL_STS", "LAND_CD_1",
-                                                       "COV_PCT_1", "LBL_VEGCOV", "Area_Ha", "BGC_ZONE", "BGC_SUBZON",
-                                                       "SPEC_PCT_1"))
+                                                       "FORESTED_1", "FORESTED_2", "FORESTED_3", "BCLCS_LEVEL_1", "BCLCS_LEVEL_2", "BCLCS_LEVEL_3",
+                                                       "BCLCS_LEVEL_4", "BCLCS_LEVEL_5", "SPECIES_CD_1", "AGE_CL_STS", "LAND_COVER_CLASS_CD_1",
+                                                       "EST_COVERAGE_PCT_1", "LINE_5_VEGETATION_COVER", "Area_Ha", "BGC_ZONE", "BGC_SUBZON",
+                                                       "SPECIES_PCT_1"))
 
   if (is.null(vri_bem[["lbl_edit"]])) {
     set(vri_bem , j = "lbl_edit", value = "")
@@ -110,45 +110,45 @@ correct_bem_from_vri <- function(vri_bem, beu_bec, clear_site_ma = TRUE, use_ife
   # -shallow open water typically associated with floating vegetation
   # -For LIW for moose, LS is rated 0.05, and OW is rated 0.25 because of its common association with a
   # shrub fringe
-  which_OW <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_1"]] == "N" & vri_bem[["BCLCS_LV_5"]] == "LA" &
+  which_OW <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_1"]] == "N" & vri_bem[["BCLCS_LEVEL_5"]] == "LA" &
                       vri_bem[["Area_Ha"]] <= 2 & !vri_bem[["row_updated"]])
 
   vri_bem[(which_OW), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "OW",
-                           lbl_edit = "Updated to 10 OW because BCLCS_LV_1 = 'N', BCLCS_LV_5 = 'LA', Area <= 10 ha",
+                           lbl_edit = "Updated to 10 OW because BCLCS_LEVEL_1 = 'N', BCLCS_LEVEL_5 = 'LA', Area <= 10 ha",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
 
   ## LS - Small Lake (line 291) ----
-  which_LS <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_1"]] == "N" & vri_bem[["BCLCS_LV_5"]] == "LA" &
+  which_LS <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_1"]] == "N" & vri_bem[["BCLCS_LEVEL_5"]] == "LA" &
                       vri_bem[["Area_Ha"]] > 2 & vri_bem[["Area_Ha"]] <=60 & !vri_bem[["row_updated"]])
 
   vri_bem[(which_LS), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "LS",
-                           lbl_edit = "Updated to 10 LS because BCLCS_LV_1 = 'N', BCLCS_LV_5 = 'LA', Area <= 60 ha",
+                           lbl_edit = "Updated to 10 LS because BCLCS_LEVEL_1 = 'N', BCLCS_LEVEL_5 = 'LA', Area <= 60 ha",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
 
   ## LL - Large Lake (line 303) ----
-  which_LL <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_1"]] == "N" & vri_bem[["BCLCS_LV_5"]] == "LA" &
+  which_LL <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_1"]] == "N" & vri_bem[["BCLCS_LEVEL_5"]] == "LA" &
                       vri_bem[["Area_Ha"]] > 60 & !vri_bem[["row_updated"]])
 
   vri_bem[(which_LL), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "LL",
-                           lbl_edit = "Updated to 10 LL because BCLCS_LV_1 = 'N', BCLCS_LV_5 = 'LA', Area > 60 ha",
+                           lbl_edit = "Updated to 10 LL because BCLCS_LEVEL_1 = 'N', BCLCS_LEVEL_5 = 'LA', Area > 60 ha",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
 
 
   ## RE - Reservoir (line 315) ----
-  which_RE <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_1"]] == "N" & vri_bem[["BCLCS_LV_5"]] == "RE" & !vri_bem[["row_updated"]])
+  which_RE <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_1"]] == "N" & vri_bem[["BCLCS_LEVEL_5"]] == "RE" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_RE), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "RE",
-                           lbl_edit = "Updated to 10 RE because BCLCS_LV_1 = 'N', BCLCS_LV_5 = 'RE'",
+                           lbl_edit = "Updated to 10 RE because BCLCS_LEVEL_1 = 'N', BCLCS_LEVEL_5 = 'RE'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
@@ -157,23 +157,23 @@ correct_bem_from_vri <- function(vri_bem, beu_bec, clear_site_ma = TRUE, use_ife
   # There are two VRI codes (labels) that apply to rivers; river (RI) and river sediments (RS)
   # The default applied was to assign 'FP' (Fast Perennial Stream) to BEU_MC where rivers were identified by
   # this query.
-  which_RI <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_1"]] == "N" & vri_bem[["BCLCS_LV_5"]] %in% c("RI", "RS") & !vri_bem[["row_updated"]])
+  which_RI <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_1"]] == "N" & vri_bem[["BCLCS_LEVEL_5"]] %in% c("RI", "RS") & !vri_bem[["row_updated"]])
 
   vri_bem[(which_RI), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "RI",
-                           lbl_edit = "Updated to 10 RI because BCLCS_LV_1 = 'N', BCLCS_LV_5 = 'RI' or 'RS'",
+                           lbl_edit = "Updated to 10 RI because BCLCS_LEVEL_1 = 'N', BCLCS_LEVEL_5 = 'RI' or 'RS'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
 
 
   ## WL - Wetland (line 367) ----
-  which_WL <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_1"]] == "V" & vri_bem[["BCLCS_LV_2"]] == "N"
-                    & vri_bem[["BCLCS_LV_3"]] == "W" & vri_bem[["AGE_CL_STS"]] == -1 & !vri_bem[["row_updated"]])
+  which_WL <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_1"]] == "V" & vri_bem[["BCLCS_LEVEL_2"]] == "N"
+                    & vri_bem[["BCLCS_LEVEL_3"]] == "W" & vri_bem[["AGE_CL_STS"]] == -1 & !vri_bem[["row_updated"]])
 
   vri_bem[(which_RI), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "WL",
-                           lbl_edit = "Updated to 10 WL because BCLCS_LV_1/2/3 = 'V'/'N'/'W' and AGE_CL_STS = -1",
+                           lbl_edit = "Updated to 10 WL because BCLCS_LEVEL_1/2/3 = 'V'/'N'/'W' and AGE_CL_STS = -1",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
@@ -186,31 +186,31 @@ correct_bem_from_vri <- function(vri_bem, beu_bec, clear_site_ma = TRUE, use_ife
 
   ## BB - Black Spruce Bog (line 448) ----
 
-  which_BB <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["SPEC_CD_1"]] == "SB" & vri_bem[["SPEC_PCT_1"]] >= 90 &
+  which_BB <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["SPECIES_CD_1"]] == "SB" & vri_bem[["SPECIES_PCT_1"]] >= 90 &
                       !vri_bem[["row_updated"]])
 
   vri_bem[(which_BB), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "BB",
-                           lbl_edit = "Updated to 10 BB because SPEC_CD_1 = 'SB'",
+                           lbl_edit = "Updated to 10 BB because SPECIES_CD_1 = 'SB'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
 
   ## AP - Anthropogenic and Non-vegetated (line 457) ----
-  which_AP <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "AP" & !vri_bem[["row_updated"]])
+  which_AP <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_5"]] == "AP" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_AP), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "UR",
-                           lbl_edit = "Updated to 10 UR because BCLCS_LV_5 = 'AP'",
+                           lbl_edit = "Updated to 10 UR because BCLCS_LEVEL_5 = 'AP'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
   ## BU - (line 464) -----
-  which_BU <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "BU" & !vri_bem[["row_updated"]])
+  which_BU <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_5"]] == "BU" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_BU), `:=`(SDEC_1 = 10,
                            DISTCLS_1 = "F",
-                           lbl_edit = "Updated to 10 UR because BCLCS_LV_5 = 'AP'",
+                           lbl_edit = "Updated to 10 UR because BCLCS_LEVEL_5 = 'AP'",
                            row_updated = TRUE)]
 
 
@@ -231,167 +231,167 @@ correct_bem_from_vri <- function(vri_bem, beu_bec, clear_site_ma = TRUE, use_ife
   # forest types as the dominant forest ecosystem.
 
   ## GB - Gravel Bar (line 484) ----
-  which_GB <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "GB" & !vri_bem[["row_updated"]])
+  which_GB <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_5"]] == "GB" & !vri_bem[["row_updated"]])
 
 
   vri_bem[(which_GB), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "GB",
-                           lbl_edit = "Updated to 10 GB because BCLCS_LV_5 = 'GB'",
+                           lbl_edit = "Updated to 10 GB because BCLCS_LEVEL_5 = 'GB'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
 
   ## GL - Glacier (line 491) ----
-  which_GL <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] %in% c("GL", "PN") & !vri_bem[["row_updated"]])
+  which_GL <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_5"]] %in% c("GL", "PN") & !vri_bem[["row_updated"]])
 
   vri_bem[(which_GL), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "GL",
-                           lbl_edit = "Updated to 10 GL because BCLCS_LV_5 = 'GL' or 'PN'",
+                           lbl_edit = "Updated to 10 GL because BCLCS_LEVEL_5 = 'GL' or 'PN'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
 
 
   ## GP - Gravel Pit (line 498) ----
-  which_GP <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "GP" & !vri_bem[["row_updated"]])
+  which_GP <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_5"]] == "GP" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_GP), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "GP",
-                           lbl_edit = "Updated to 10 GP because BCLCS_LV_5 = 'GB'",
+                           lbl_edit = "Updated to 10 GP because BCLCS_LEVEL_5 = 'GB'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
   ## LL - Landing (line 505) ----
-  which_LL <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "LL" & !vri_bem[["row_updated"]])
+  which_LL <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_5"]] == "LL" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_LL), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "LL",
-                           lbl_edit = "Updated to 10 LL because BCLCS_LV_5 = 'LL'",
+                           lbl_edit = "Updated to 10 LL because BCLCS_LEVEL_5 = 'LL'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
   ## MI - Mine (line 512) ----
-  which_MI <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] %in% c("MI", "TZ", "MZ") & !vri_bem[["row_updated"]])
+  which_MI <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_5"]] %in% c("MI", "TZ", "MZ") & !vri_bem[["row_updated"]])
 
   vri_bem[(which_MI), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "MI",
-                           lbl_edit = "Updated to 10 MI because BCLCS_LV_5 = 'MI', 'TZ' or 'MZ'",
+                           lbl_edit = "Updated to 10 MI because BCLCS_LEVEL_5 = 'MI', 'TZ' or 'MZ'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
   ## RO - Rock (line 519) ----
-  which_RO <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] %in% c("RO", "BR", "BI") & !vri_bem[["row_updated"]])
+  which_RO <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_5"]] %in% c("RO", "BR", "BI") & !vri_bem[["row_updated"]])
 
   vri_bem[(which_RO), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "RO",
-                           lbl_edit = "Updated to 10 RO because BCLCS_LV_5 = 'RO', 'BR' or 'BI'",
+                           lbl_edit = "Updated to 10 RO because BCLCS_LEVEL_5 = 'RO', 'BR' or 'BI'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
 
   ## TA - Talus (line 526) ----
-  which_TA <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "TA" & !vri_bem[["row_updated"]])
+  which_TA <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_5"]] == "TA" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_TA), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "TA",
-                           lbl_edit = "Updated to 10 TA because BCLCS_LV_5 = 'TA'",
+                           lbl_edit = "Updated to 10 TA because BCLCS_LEVEL_5 = 'TA'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
   ## TC - Transportation Corridor (line 533) ----
-  which_TC <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] %in% c("TC", "RN", "RZ") & !vri_bem[["row_updated"]])
+  which_TC <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_5"]] %in% c("TC", "RN", "RZ") & !vri_bem[["row_updated"]])
 
   vri_bem[(which_TC), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "TC",
-                           lbl_edit = "Updated to 10 TC because BCLCS_LV_5 = 'TC', 'RN' or 'RZ'",
+                           lbl_edit = "Updated to 10 TC because BCLCS_LEVEL_5 = 'TC', 'RN' or 'RZ'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
   ##  TR - Transmission Corridor (line 540) ----
-  which_TR <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "TR" & !vri_bem[["row_updated"]])
+  which_TR <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_5"]] == "TR" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_TR), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "TR",
-                           lbl_edit = "Updated to 10 TR because BCLCS_LV_5 = 'TR'",
+                           lbl_edit = "Updated to 10 TR because BCLCS_LEVEL_5 = 'TR'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
 
   ## UV - Unvegetated (line 547) ----
-  which_UV <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] %in% c("UV", "RS", "MU", "ES", "CB", "MN", "RM") & !vri_bem[["row_updated"]])
+  which_UV <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_5"]] %in% c("UV", "RS", "MU", "ES", "CB", "MN", "RM") & !vri_bem[["row_updated"]])
 
   vri_bem[(which_UV), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "UV",
-                           lbl_edit = "Updated to 10 UV because BCLCS_LV_5 = 'UV', 'RS', 'MU', 'ES', 'CB', 'MN' or 'RM'",
+                           lbl_edit = "Updated to 10 UV because BCLCS_LEVEL_5 = 'UV', 'RS', 'MU', 'ES', 'CB', 'MN' or 'RM'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
-  which_UV <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["LAND_CD_1"]] %in% c("UV", "RS", "MU", "ES", "CB", "MN", "RM") &
-                      vri_bem[["COV_PCT_1"]] >= 95 & !vri_bem[["row_updated"]])
+  which_UV <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["LAND_COVER_CLASS_CD_1"]] %in% c("UV", "RS", "MU", "ES", "CB", "MN", "RM") &
+                      vri_bem[["EST_COVERAGE_PCT_1"]] >= 95 & !vri_bem[["row_updated"]])
 
   vri_bem[(which_UV), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "UV",
-                           lbl_edit = "Updated to 10 UV because LAND_CD_1 = 'UV', 'RS', 'MU', 'ES', 'CB', 'MN' or 'RM' and COV_PCT_1 >= 95'",
+                           lbl_edit = "Updated to 10 UV because LAND_COVER_CLASS_CD_1 = 'UV', 'RS', 'MU', 'ES', 'CB', 'MN' or 'RM' and EST_COVERAGE_PCT_1 >= 95'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
 
   ## UR - Urban (line 564) ----
-  which_UR <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_5"]] == "UR" & !vri_bem[["row_updated"]])
+  which_UR <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_5"]] == "UR" & !vri_bem[["row_updated"]])
 
   vri_bem[(which_UR), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "UR",
-                           lbl_edit = "Updated to 10 UR because BCLCS_LV_5 = 'UR'",
+                           lbl_edit = "Updated to 10 UR because BCLCS_LEVEL_5 = 'UR'",
                            row_updated = TRUE,
                            blank_eco_variables = TRUE)]
 
 
   ## TC - Transportation Corridor (Component 2) (line 564) ----
 
-  which_TC2 <-  which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_2"]] == "T" & vri_bem[["SDEC_1"]] == 10 &
-                        vri_bem[["LBL_VEGCOV"]] %in% c('rz', 'rz,by', 'rz,by,he', 'rz,by,he,sl', 'rz,by,sl', 'rz,by,sl,he', 'rz,by,st', 'rz,he',
-                                                       'rz,by,sl,he', 'rz,by,st', 'rz,he', 'rz,he,by', 'rz,he,by,sl', 'rz,he,sl', 'rz,he,sl,by',
-                                                       'rz,he,st', 'rz,he,st,by', 'rz,hf,by', 'rz,hf,sl,by', 'rz,hg', 'rz,hg,sl', 'rz,sl',
-                                                       'rz,sl,by', 'rz,sl,by,he', 'rz,sl,he', 'rz,sl,he,by', 'rz,sl,hf', 'rz,sl,hf,by', 'rz,sl,hg',
-                                                       'rz,st', 'rz,st,he', 'rz,st,he,by', 'rz,st,hf', 'rz,st,hg') &
+  which_TC2 <-  which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LEVEL_2"]] == "T" & vri_bem[["SDEC_1"]] == 10 &
+                        vri_bem[["LINE_5_VEGETATION_COVER"]] %in% c('rz', 'rz,by', 'rz,by,he', 'rz,by,he,sl', 'rz,by,sl', 'rz,by,sl,he', 'rz,by,st', 'rz,he',
+                                                                    'rz,by,sl,he', 'rz,by,st', 'rz,he', 'rz,he,by', 'rz,he,by,sl', 'rz,he,sl', 'rz,he,sl,by',
+                                                                    'rz,he,st', 'rz,he,st,by', 'rz,hf,by', 'rz,hf,sl,by', 'rz,hg', 'rz,hg,sl', 'rz,sl',
+                                                                    'rz,sl,by', 'rz,sl,by,he', 'rz,sl,he', 'rz,sl,he,by', 'rz,sl,hf', 'rz,sl,hf,by', 'rz,sl,hg',
+                                                                    'rz,st', 'rz,st,he', 'rz,st,he,by', 'rz,st,hf', 'rz,st,hg') &
                         !vri_bem[["row_updated"]])
 
 
   vri_bem[(which_TC2), `:=`(SDEC_1 = 8,
                             SDEC_2 = 2,
                             BEUMC_S2 = "TC",
-                            lbl_edit = "Added 2nd component 2 TC because BCLCS_LV_2 = 'T' and LBL_VEGCOV begins with 'rz'",
+                            lbl_edit = "Added 2nd component 2 TC because BCLCS_LEVEL_2 = 'T' and LINE_5_VEGETATION_COVER begins with 'rz'",
                             row_updated = TRUE)]
 
 
   # Update STAND_A1 ----
   # line 608 (no `else if` be careful! it's a simple if)
-  which_stand_B <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["SPEC_CD_1"]] %in% c("AC", "ACB", "ACT", "AT", "EP") &
-                           vri_bem[["SPEC_PCT_1"]] >= 75 & vri_bem[["STAND_A1"]] %in% c("C", "M"))
+  which_stand_B <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["SPECIES_CD_1"]] %in% c("AC", "ACB", "ACT", "AT", "EP") &
+                           vri_bem[["SPECIES_PCT_1"]] >= 75 & vri_bem[["STAND_A1"]] %in% c("C", "M"))
 
   vri_bem[(which_stand_B), `:=`(STAND_A1 = "B",
                                 lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
-                                                  "Updated STAND_A1 to 'B' because SPEC_CD_1 = '", SPEC_CD_1, "' and SPEC_PCT_1 >= 75 and STAND_A1 was 'C' or 'M'"),
+                                                  "Updated STAND_A1 to 'B' because SPECIES_CD_1 = '", SPECIES_CD_1, "' and SPECIES_PCT_1 >= 75 and STAND_A1 was 'C' or 'M'"),
                                 row_updated = TRUE)]
 
 
   # line 618
-  which_stand_M <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["SPEC_CD_1"]] %in% c("AC", "ACB", "ACT", "AT", "EP") &
-                           vri_bem[["SPEC_PCT_1"]] >= 50 & vri_bem[["SPEC_PCT_1"]] < 75 & vri_bem[["STAND_A1"]] %in% c("C", "B"))
+  which_stand_M <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["SPECIES_CD_1"]] %in% c("AC", "ACB", "ACT", "AT", "EP") &
+                           vri_bem[["SPECIES_PCT_1"]] >= 50 & vri_bem[["SPECIES_PCT_1"]] < 75 & vri_bem[["STAND_A1"]] %in% c("C", "B"))
 
   vri_bem[(which_stand_M), `:=`(STAND_A1 = "M",
                                 lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
-                                                  "Updated STAND_A1 to 'M' because SPEC_CD_1 = '", SPEC_CD_1, "' and SPEC_PCT_1 >= 50 and < 75 and STAND_A1 was 'C' or 'B'"),
+                                                  "Updated STAND_A1 to 'M' because SPECIES_CD_1 = '", SPECIES_CD_1, "' and SPECIES_PCT_1 >= 50 and < 75 and STAND_A1 was 'C' or 'B'"),
                                 row_updated = TRUE)]
 
   # line 627
-  which_stand_C <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["SPEC_CD_1"]] %in% c("B", "BB", "BL", "CW", "FD", "FDI", "HM", "HW", "PA", "PL", "PLI",
+  which_stand_C <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["SPECIES_CD_1"]] %in% c("B", "BB", "BL", "CW", "FD", "FDI", "HM", "HW", "PA", "PL", "PLI",
                                                                                        "S", "SB", "SE", "SS", "SW", "SX", "SXW") &
-                           vri_bem[["SPEC_PCT_1"]] >= 75 & vri_bem[["STAND_A1"]] == "M")
+                           vri_bem[["SPECIES_PCT_1"]] >= 75 & vri_bem[["STAND_A1"]] == "M")
 
   vri_bem[(which_stand_C), `:=`(STAND_A1 = "C",
                                 lbl_edit = paste0(lbl_edit, fifelse(lbl_edit == "", "", "; "),
-                                                  "Updated STAND_A1 to 'C' because SPEC_CD_1 = '", SPEC_CD_1, "' and SPEC_PCT_1 >= 75 and STAND_A1 was 'M'"),
+                                                  "Updated STAND_A1 to 'C' because SPECIES_CD_1 = '", SPECIES_CD_1, "' and SPECIES_PCT_1 >= 75 and STAND_A1 was 'M'"),
                                 row_updated = TRUE)]
 
 
@@ -546,27 +546,27 @@ remove_inadequate_wetlands <- function(ifc){
 
   #validate variables exists in ifc
   validate_required_attributes(ifc,
-                               required_attributes = c("BEUMC_S1", "BEUMC_S2", "BEUMC_S3", "BCLCS_LV_4", "SDEC_1", "SDEC_2", "SDEC_3"))
+                               required_attributes = c("BEUMC_S1", "BEUMC_S2", "BEUMC_S3", "BCLCS_LEVEL_4", "SDEC_1", "SDEC_2", "SDEC_3"))
 
 
-  which_treed_WL_3 <-  which(is.na(ifc[["SMPL_TYPE"]]) & ifc[["BCLCS_LV_4"]] %in% c("TB", "TC", "TM") &
+  which_treed_WL_3 <-  which(is.na(ifc[["SMPL_TYPE"]]) & ifc[["BCLCS_LEVEL_4"]] %in% c("TB", "TC", "TM") &
                                ifc[["BEUMC_S3"]] == "WL" & !ifc[["row_updated"]])
 
   #Replace wetland in 3rd component ----
   set(ifc, i = which_treed_WL_3, j = "SDEC_2", value = ifc[["SDEC_2"]][which_treed_WL_3] + ifc[["SDEC_3"]][which_treed_WL_3])
   set(ifc, i = which_treed_WL_3, j = "SDEC_3", value = 0)
   set_shifted_eco_variables(ifc, i = which_treed_WL_3, list(c(3, NA)))
-  set(ifc, i = which_treed_WL_3, j = "lbl_edit", value = "Removed WL in component 3 because BCLCS_LV_4 = 'TB', 'TC' or 'TM'")
+  set(ifc, i = which_treed_WL_3, j = "lbl_edit", value = "Removed WL in component 3 because BCLCS_LEVEL_4 = 'TB', 'TC' or 'TM'")
   set(ifc, i = which_treed_WL_3, j = "row_updated", value = TRUE)
 
 
 
   #Replace wetlands in 2nd component ----
 
-  which_treed_WL_2_from_3 <-  which(is.na(ifc[["SMPL_TYPE"]]) & ifc[["BCLCS_LV_4"]] %in% c("TB", "TC", "TM") &
+  which_treed_WL_2_from_3 <-  which(is.na(ifc[["SMPL_TYPE"]]) & ifc[["BCLCS_LEVEL_4"]] %in% c("TB", "TC", "TM") &
                                       ifc[["BEUMC_S2"]] == "WL" & ifc[["SDEC_3"]] > 0 & !ifc[["row_updated"]])
 
-  which_treed_WL_2_to_1 <-  which(is.na(ifc[["SMPL_TYPE"]]) & ifc[["BCLCS_LV_4"]] %in% c("TB", "TC", "TM") &
+  which_treed_WL_2_to_1 <-  which(is.na(ifc[["SMPL_TYPE"]]) & ifc[["BCLCS_LEVEL_4"]] %in% c("TB", "TC", "TM") &
                                       ifc[["BEUMC_S2"]] == "WL" & ifc[["SDEC_3"]] %in% c(0, NA_integer_) & !ifc[["row_updated"]])
 
 
@@ -574,31 +574,31 @@ remove_inadequate_wetlands <- function(ifc){
   set_shifted_eco_variables(ifc, i = which_treed_WL_2_from_3, list(c(2,3), c(3,NA)))
   set(ifc, i = which_treed_WL_2_from_3, j = "SDEC_2", value = ifc[["SDEC_2"]][which_treed_WL_2_from_3] + ifc[["SDEC_3"]][which_treed_WL_2_from_3])
   set(ifc, i = which_treed_WL_2_from_3, j = "SDEC_3", value = 0)
-  set(ifc, i = which_treed_WL_2_from_3, j = "lbl_edit", value = "Removed WL in component 2 because BCLCS_LV_4 = 'TB', 'TC' or 'TM'")
+  set(ifc, i = which_treed_WL_2_from_3, j = "lbl_edit", value = "Removed WL in component 2 because BCLCS_LEVEL_4 = 'TB', 'TC' or 'TM'")
   set(ifc, i = which_treed_WL_2_from_3, j = "row_updated", value = TRUE)
 
   ## When there is no value in 3rd component update 1st from 2nd -----
   set(ifc, i = which_treed_WL_2_to_1, j = "SDEC_1", value = ifc[["SDEC_1"]][which_treed_WL_2_to_1] + ifc[["SDEC_2"]][which_treed_WL_2_to_1])
   set_shifted_eco_variables(ifc, i = which_treed_WL_2_to_1, list(c(2, NA)))
   set(ifc, i = which_treed_WL_2_to_1, j = "SDEC_2", value = 0)
-  set(ifc, i = which_treed_WL_2_to_1, j = "lbl_edit", value = "Removed WL in component 2 because BCLCS_LV_4 = 'TB', 'TC' or 'TM'")
+  set(ifc, i = which_treed_WL_2_to_1, j = "lbl_edit", value = "Removed WL in component 2 because BCLCS_LEVEL_4 = 'TB', 'TC' or 'TM'")
   set(ifc, i = which_treed_WL_2_to_1, j = "row_updated", value = TRUE)
 
 
   #Replace wetlands from 1st component -----
-  which_treed_WL_1_from_2 <-  which(is.na(ifc[["SMPL_TYPE"]]) & ifc[["BCLCS_LV_4"]] %in% c("TB", "TC", "TM") &
+  which_treed_WL_1_from_2 <-  which(is.na(ifc[["SMPL_TYPE"]]) & ifc[["BCLCS_LEVEL_4"]] %in% c("TB", "TC", "TM") &
                                       ifc[["BEUMC_S1"]] == "WL" & ifc[["SDEC_2"]] > 0 & !ifc[["row_updated"]])
 
   set_shifted_eco_variables(ifc, which_treed_WL_1_from_2, list(c(1,2), c(2,3), c(3,NA)))
   set(ifc, i = which_treed_WL_1_from_2, j = "SDEC_3", value = 0)
-  set(ifc, i = which_treed_WL_1_from_2, j = "lbl_edit", value = "Removed WL in component 1 because BCLCS_LV_4 = 'TB', 'TC' or 'TM'")
+  set(ifc, i = which_treed_WL_1_from_2, j = "lbl_edit", value = "Removed WL in component 1 because BCLCS_LEVEL_4 = 'TB', 'TC' or 'TM'")
   set(ifc, i = which_treed_WL_1_from_2, j = "row_updated", value = TRUE)
 
   #Warning if polyfgon is pule WL ----
-  which_treed_pure_WL <- which(is.na(ifc[["SMPL_TYPE"]]) & ifc[["BCLCS_LV_4"]] %in% c("TB", "TC", "TM") &
+  which_treed_pure_WL <- which(is.na(ifc[["SMPL_TYPE"]]) & ifc[["BCLCS_LEVEL_4"]] %in% c("TB", "TC", "TM") &
                                  ifc[["BEUMC_S1"]] %in% c(0, NA_integer_))
 
-  set(ifc, i = which_treed_pure_WL, j = "lbl_edit", value = "**** Warning: Polygon is pure WL, but BCLCS_LV_4 = 'TB', 'TC' or 'TM'")
+  set(ifc, i = which_treed_pure_WL, j = "lbl_edit", value = "**** Warning: Polygon is pure WL, but BCLCS_LEVEL_4 = 'TB', 'TC' or 'TM'")
   set(ifc, i = which_treed_pure_WL, j = "row_updated", value = TRUE)
 
   ifc
