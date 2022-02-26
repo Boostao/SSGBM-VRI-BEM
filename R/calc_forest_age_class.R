@@ -41,7 +41,8 @@ calc_forest_age_class <- function(vri_bem, most_recent_harvest_year) {
   setDT(vri_bem)
 
   # if proj_age_1 is empty the year of harvest date and most_recent_harvest_year to compute the projected age
-  vri_bem[is.na(PROJ_AGE_1), PROJ_AGE_1 := most_recent_harvest_year - year(as.Date(HARVEST_DATE, format = "%Y%m%d"))]
+  # Harvest_Year comes from CCB and HARVEST_DATE comes from VRI
+  vri_bem[is.na(PROJ_AGE_1), PROJ_AGE_1 := most_recent_harvest_year - fcoalesce(Harvest_Year, year(as.Date(HARVEST_DATE, format = "%Y%m%d")))]
 
   # create variable for structural stage look up
   vri_bem[ , VRI_AGE_CL_STS := fcase(PROJ_AGE_1 < 0, -1,

@@ -295,7 +295,7 @@ rasterize_rivers <- function(src_datasource, dst_filename, layer =  NULL, a_srs 
 
 rasterize_ccb <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NULL, te = NULL,
                              tr = NULL, reference = NULL,
-                             numeric_attributes = "HARVESTYR",
+                             numeric_attributes = "Harvest_Year",
                              character_attributes = NULL,
                              date_attributes = NULL,
                              burn = NULL, output_raster = FALSE, verbose = TRUE) {
