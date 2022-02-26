@@ -19,11 +19,12 @@ if (use_bcdata){
   vri <- read_vri(wkt_filter = aoi_wkt)
   rivers <- read_rivers(wkt_filter = aoi_wkt)
   wetlands <- read_wetlands(wkt_filter = aoi_wkt)
+  ccb <- read_ccb(wkt_filter = aoi_wkt)
 } else {
   vri <- read_vri("../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY")
   rivers <- read_rivers("../SSGBM-VRI-BEM-data/CodeWithUs.gdb")
   wetlands <- read_wetlands("../SSGBM-VRI-BEM-data/CodeWithUs.gdb")
-
+  ccb <- read_ccb("../SSGBM-VRI-BEM-data/CodeWithUs.gdb")
 }
 
 bem <- read_bem("../SSGBM-VRI-BEM-data/BEM_VRI")
@@ -68,8 +69,6 @@ vri_bem <- merge_elevation_raster_on_sf(elev_raster = elev_rast,
                                         elevation_threshold = 1400)
 
 # merge cutblock
-ccb <- read_ccb("../SSGBM-VRI-BEM-data/CodeWithUs.gdb")
-
 vri_bem <- merge_ccb_on_vri(vri_bem = vri_bem,
                             ccb = ccb)
 
