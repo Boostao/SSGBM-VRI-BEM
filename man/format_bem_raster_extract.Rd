@@ -20,7 +20,7 @@ format_bem_raster_extract(
     "SITE_M3B", "STRCT_S3", "STRCT_M3", "STAND_A3", "SERAL_3", "DISTCLS_3", "DISTSCLS_3",
     "DISSSCLS_3", "SECL_3", "SESUBCL_3", "COND_3", "VIAB_3", "FORESTED_3",     
     "TREE_C3", "SHRUB_C3"),
-  date_attributes = "HRVSTDT"
+  date_attributes = "HARVEST_DATE"
 )
 }
 \arguments{

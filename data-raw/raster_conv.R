@@ -11,32 +11,32 @@ raster_conv <- list(vri = list(),
 # VRI ----
 
 # BCLCS_LV_1 ----
-raster_conv$vri$BCLCS_LV_1 <- data.table(value = c(NA_character_, "V", "N", "U"))
-raster_conv$vri$BCLCS_LV_1[, factor := 0:(.N-1)]
+raster_conv$vri$BCLCS_LEVEL_1 <- data.table(value = c(NA_character_, "V", "N", "U"))
+raster_conv$vri$BCLCS_LEVEL_1[, factor := 0:(.N-1)]
 
 # BCLCS_LV_2 ----
-raster_conv$vri$BCLCS_LV_2 <- data.table(value = c(NA_character_, "T", "N", "L", "W"))
-raster_conv$vri$BCLCS_LV_2[, factor := 0:(.N-1)]
+raster_conv$vri$BCLCS_LEVEL_2 <- data.table(value = c(NA_character_, "T", "N", "L", "W"))
+raster_conv$vri$BCLCS_LEVEL_2[, factor := 0:(.N-1)]
 
 # BCLCS_LV_3 ----
-raster_conv$vri$BCLCS_LV_3 <- data.table(value = c(NA_character_, "W", "U", "A"))
-raster_conv$vri$BCLCS_LV_3[, factor := 0:(.N-1)]
+raster_conv$vri$BCLCS_LEVEL_3 <- data.table(value = c(NA_character_, "W", "U", "A"))
+raster_conv$vri$BCLCS_LEVEL_3[, factor := 0:(.N-1)]
 
 
 # BCLCS_LV_4 ----
-raster_conv$vri$BCLCS_LV_4 <- data.table(value = c(NA_character_, "TC", "TB", "TM", "ST", "SL", "HE", "HF", "HG", "BY",
+raster_conv$vri$BCLCS_LEVEL_4 <- data.table(value = c(NA_character_, "TC", "TB", "TM", "ST", "SL", "HE", "HF", "HG", "BY",
                                       "BM", "BL", "SI", "RO", "EL"))
-raster_conv$vri$BCLCS_LV_4[, factor := 0:(.N-1)]
+raster_conv$vri$BCLCS_LEVEL_4[, factor := 0:(.N-1)]
 
 # BCLCS_LV_5 ----
-raster_conv$vri$BCLCS_LV_5 <- data.table(value = c(NA_character_, "DE", "OP", "SP", "CL", "OP", "GL", "PN", "BR", "TA",
+raster_conv$vri$BCLCS_LEVEL_5 <- data.table(value = c(NA_character_, "DE", "OP", "SP", "CL", "OP", "GL", "PN", "BR", "TA",
                                                    "BI", "MZ", "LB", "RS", "ES", "LS", "RM", "BE", "LL",
                                                    "BU", "RZ", "MU", "CB", "MN", "GP", "TZ", "RN", "UR",
                                                    "AP", "MI", "OT", "LA", "RE", "RI", "OC"))
-raster_conv$vri$BCLCS_LV_5[, factor := 0:(.N-1)]
+raster_conv$vri$BCLCS_LEVEL_5[, factor := 0:(.N-1)]
 
-# SPEC_CD_1 ----
-raster_conv$vri$SPEC_CD_1 <- data.table(value = c(NA_character_, "AC", "AT", "B", "BL", "BA", "BG", "CW", "DR", "E", "EP",
+# SPECIES_CD_1 ----
+raster_conv$vri$SPECIES_CD_1 <- data.table(value = c(NA_character_, "AC", "AT", "B", "BL", "BA", "BG", "CW", "DR", "E", "EP",
                                                   "EA", "FD", "H", "HW", "HM", "L", "LA", "LT", "LW", "MB",
                                                   "PF", "PL", "PW", "PA", "PY", "PJ", "S", "SB", "SE", "SS",
                                                   "SW", "YC", "DM", "R", "EW", "Cw", "Yc",
@@ -53,35 +53,35 @@ raster_conv$vri$SPEC_CD_1 <- data.table(value = c(NA_character_, "AC", "AT", "B"
                                                   "Oa", "Ob", "Oc", "Od", "Oe", "Of", "Og", "Oh", "Oi",
                                                   "Pm", "Pr", "Ps", "Sn"))
 
-raster_conv$vri$SPEC_CD_1[, factor := 0:(.N-1)]
+raster_conv$vri$SPECIES_CD_1[, factor := 0:(.N-1)]
 
-# SPEC_CD_2 ----
-raster_conv$vri$SPEC_CD_2 <- copy(raster_conv$vri$SPEC_CD_1)
+# SPECIES_CD_2 ----
+raster_conv$vri$SPECIES_CD_2 <- copy(raster_conv$vri$SPECIES_CD_1)
 
-# SPEC_CD_3 ----
-raster_conv$vri$SPEC_CD_3 <- copy(raster_conv$vri$SPEC_CD_1)
+# SPECIES_CD_3 ----
+raster_conv$vri$SPECIES_CD_3 <- copy(raster_conv$vri$SPECIES_CD_1)
 
-# SPEC_CD_4 ----
-raster_conv$vri$SPEC_CD_4 <- copy(raster_conv$vri$SPEC_CD_1)
+# SPECIES_CD_4 ----
+raster_conv$vri$SPECIES_CD_4 <- copy(raster_conv$vri$SPECIES_CD_1)
 
-# SPEC_CD_5 ----
-raster_conv$vri$SPEC_CD_5 <- copy(raster_conv$vri$SPEC_CD_1)
+# SPECIES_CD_5 ----
+raster_conv$vri$SPECIES_CD_5 <- copy(raster_conv$vri$SPECIES_CD_1)
 
-# SPEC_CD_6 ----
-raster_conv$vri$SPEC_CD_6 <- copy(raster_conv$vri$SPEC_CD_1)
+# SPECIES_CD_6 ----
+raster_conv$vri$SPECIES_CD_6 <- copy(raster_conv$vri$SPECIES_CD_1)
 
-# LAND_CD_1 ----
-raster_conv$vri$LAND_CD_1 <- data.table(value = c(NA_character_, "TB", "TC", "TM", "ST", "SL", "HE", "HF", "HG",
-                                                  "BY", "BM", "BL", "SI", "GL", "PN", "RO, BR",
-                                                  "TA", "BI", "MZ", "LB", "EL", "RS", "ES", "LS",
-                                                  "RM", "BE", "LL", "BU", "RZ", "MU", "CB", "MN", "GP",
-                                                  "TZ", "RN", "UR", "AP", "MI", "OT", "LA", "RE", "RI",
-                                                  "A", "OC"))
-raster_conv$vri$LAND_CD_1[, factor := 0:(.N-1)]
+# LAND_COVER_CLASS_CD_1 ----
+raster_conv$vri$LAND_COVER_CLASS_CD_1 <- data.table(value = c(NA_character_, "TB", "TC", "TM", "ST", "SL", "HE", "HF", "HG",
+                                                              "BY", "BM", "BL", "SI", "GL", "PN", "RO, BR",
+                                                              "TA", "BI", "MZ", "LB", "EL", "RS", "ES", "LS",
+                                                              "RM", "BE", "LL", "BU", "RZ", "MU", "CB", "MN", "GP",
+                                                              "TZ", "RN", "UR", "AP", "MI", "OT", "LA", "RE", "RI",
+                                                              "A", "OC"))
+raster_conv$vri$LAND_COVER_CLASS_CD_1[, factor := 0:(.N-1)]
 
-# LBL_VEGCOV ----
-raster_conv$vri$LBL_VEGCOV <- data.table(value = c(NA_character_, "sh", "he", "by"))
-raster_conv$vri$LBL_VEGCOV[, factor := 0:(.N-1)]
+# LINE_5_VEGETATION_COVER ----
+raster_conv$vri$LINE_5_VEGETATION_COVER <- data.table(value = c(NA_character_, "sh", "he", "by"))
+raster_conv$vri$LINE_5_VEGETATION_COVER[, factor := 0:(.N-1)]
 
 
 # BEM ----

@@ -6,8 +6,8 @@
 \usage{
 format_vri_raster_extract(
   input_dt,
-  character_attributes = c(paste0("BCLCS_LV_", 1:5), paste0("SPEC_CD_", 1:6),
-    "LAND_CD_1", "LBL_VEGCOV"),
+  character_attributes = c(paste0("BCLCS_LEVEL_", 1:5), paste0("SPECIES_CD_", 1:6),
+    "LAND_COVER_CLASS_CD_1", "LINE_5_VEGETATION_COVER"),
   date_attributes = NULL
 )
 }
