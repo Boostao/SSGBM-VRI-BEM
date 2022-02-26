@@ -172,6 +172,11 @@ read_ccb <- function(dsn = NULL, layer = "CNS_CUT_BL_polygon",  wkt_filter = cha
     ccb <- st_read(dsn = dsn, layer = layer, quiet = TRUE, wkt_filter = wkt_filter)
   }
 
+  setnames(ccb,
+           old = c("HARVESTYR"),
+           new = c("Harvest_Year"),
+           skip_absent = TRUE)
+
   #make shape valid because ARCGIS draw polygon differently than sf
   ccb$Shape <- st_make_valid(ccb$Shape)
   return(ccb)
