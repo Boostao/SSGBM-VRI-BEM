@@ -209,7 +209,7 @@ help(rasterize_vri)
 
 or by via the [Reference tab of the documentation](https://bcgov.github.io/SSGBM-VRI-BEM/reference/index.html).
 
-You have probably noticed that we didn't have to pass a `factor_conv_list` to `rasterize_vri` to make it work. However, the vri layer has character attributes, which means that `rasterize_sf` needs to know what values to assign to all possibles values for each of those character attributes (see [Character Attributes] to know why). The reason `rasterize_vri` did not need a `factor_conv_list`is because the ssgbm itself comes with a mapping for all the character attributes of the vri (that is also true for all the other layers of interest!).
+You have probably noticed that we didn't have to pass a `factor_conv_list` to `rasterize_vri` to make it work. However, the vri layer has character attributes, which means that `rasterize_sf` needs to know what values to assign to all possibles values for each of those character attributes (see [Character Attributes] to know why). The reason `rasterize_vri` did not need a `factor_conv_list`is because the ssgbm package itself comes with a mapping for all the character attributes of the vri (that is also true for all the other layers of interest!).
 
 You can access the respective `factor_conv_list` for vri and bem with
 
@@ -256,4 +256,65 @@ Note that you will need to re install the ssgbm package with the new version to 
 
 # Create the Unique Ecosystem Csv File
 
-Once you have either loaded of converted into raster all the required layers, the next step is to create the unique ecosystem csv that will need to be filled in  
+Once you have either loaded of converted into raster all the required layers, the next step is to create the unique ecosystem csv that will need to be filled in.
+
+There is two ways to create the unique ecosystem csv file. The first one is using geospatial vector data using `create_unique_ecosystem_from_scratch`.
+
+
+
+```{r unique_eco_sf, eval = FALSE}
+unique_eco <-  create_unique_ecosystem_from_scratch(dsn = "../SSGBM-VRI-BEM-data/CodeWithUs.gdb",
+                                     vri_dsn = "../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY",
+                                     bem_dsn = "../SSGBM-VRI-BEM-data/BEM_VRI")
+````
+
+This function also support wkt filter if you want to create the unique ecosytem csv for a smaller area of interest. Even though, it's possible to create it for a smaller area, we recommend creating the csv using the biggest area possible to make sure that the csv contains all possible ecosystem for which you might want to create the RRM file for.
+
+That being said, it's possible that you won't have enough memory on your computer to create the unique ecosystem csv for the biggest area. Fortunalty, you can interate on an area using the `n_iterations` arguments.
+
+For example, let's run the creation of the unique ecosystem csv by iterating over an area of interest 
+
+
+```{r unique_eco_sf_iter, eval = FALSE}
+aoi <- "POLYGON ((1023955 988730.2, 1065018 988730.2, 1065018 1016988, 1023955 1016988, 1023955 988730.2))"
+
+unique_eco <-  create_unique_ecosystem_from_scratch(dsn = "../SSGBM-VRI-BEM-data/CodeWithUs.gdb",
+                                     vri_dsn = "../SSGBM-VRI-BEM-data/VEG_COMP_LYR_R1_POLY",
+                                     bem_dsn = "../SSGBM-VRI-BEM-data/BEM_VRI",
+                                     wkt_filter = aoi_filter,
+                                     n_iterations = 5,
+                                     use_ifelse = FALSE)
+````
+
+
+You can do the same using rasters as input files using `create_unique_ecosystem_from_rasters`
+
+```{r unique_eco_rast_iter, eval = FALSE}
+aoi <- "POLYGON ((1023955 988730.2, 1065018 988730.2, 1065018 1016988, 1023955 1016988, 1023955 988730.2))"
+
+unique_eco <- create_unique_ecosystem_from_rasters(vri_dsn = "../SSGBM-VRI-BEM-data/vri_test.tif",
+                                  bem_dsn = "../SSGBM-VRI-BEM-data/bem_test.tif",
+                                  wetlands_dsn = "../SSGBM-VRI-BEM-data/wetlands_test.tif",
+                                  rivers_dsn = "../SSGBM-VRI-BEM-data/rivers_test.tif",
+                                  ccb_dsn = "../SSGBM-VRI-BEM-data/ccb_test.tif",
+                                  elevation_dsn = "../elev_test.tif",
+                                  wkt_filter = aoi_filter,
+                                  n_iterations = 5)
+````
+
+
+Once you ran the function you can write the R object into a csv using `data.table` `fwrite` function
+
+```{r unique_eco_sf_write, eval = FALSE}
+library(data.table)
+# simply write the path you want to export the csv to
+fwrite(unique_eco, "C:/unique_eco.csv")
+````
+
+Once again you can get more information by using the help command
+
+```{r wrap_rasterize_help, eval = FALSE}
+help(create_unique_ecosystem_from_scratch)
+```
+
+or by via the [Reference tab of the documentation](https://bcgov.github.io/SSGBM-VRI-BEM/reference/index.html).
