@@ -177,7 +177,7 @@ create_RRM_ecosystem_from_scratch <- function(dsn, vri_dsn = dsn, bem_dsn = dsn,
   else {
     return(rbindlist(RRM_ecosystem_list)[, .(Hectares = sum(Hectares)),
                                          by = list(ECO_SEC, BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC, SLOPE_MOD, SITE_M3A,
-                                                   SNOW_CODE, ABOVE_ELEV, CROWN_MOOSE, STRCT, STAND, FORESTED)])
+                                                   SNOW_CODE, ABOVE_ELEV_THOLD, CROWN_MOOSE, STRCT, STAND, FORESTED)])
   }
 
 }

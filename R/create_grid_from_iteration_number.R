@@ -1,4 +1,3 @@
-#' @importFrom sf st_make_grid st_as_sfc st_as_text
 #' @noRd
 create_grid_from_iteration_number <- function(n_iterations, wkt_filter, as.text = TRUE) {
 

@@ -1,27 +1,16 @@
 devtools::load_all()
 
 aoi_wkt <- "MULTIPOLYGON (((1065018 932215.1, 941827.7 932215.1, 941827.7 1016988, 1065018 1016988, 1065018 932215.1)))"
+terra::vect(aoi_wkt, crs = "EPSG:3005") |> terra::plet()
 
-p <- wk::as_wkt(aoi_wkt) |> sf::st_as_sf() |> sf::`st_crs<-`("EPSG:3005") |> terra::vect() |> terra::plet()
-
-# read vri and bem layers
-vri <- read_vri(wkt_filter = aoi_wkt)
-bem <- read_bem("../SSGBM-VRI-BEM-data/BEM_VRI")
+conn <- init_conn()
+filtered_views(conn, aoi_wkt)
 
 # 1a ----
-vri_bem <- merge_bem_on_vri(vri = vri,
-                            bem = bem,
-                            return_intersection_dt = TRUE)
-
-vri_bem_intersection_dt <- vri_bem$intersection_dt
-vri_bem <- vri_bem$vri
-
-# filter out vri that have no overlapping bem (usually you should make sure the BEM covers all VRI)
-vri_bem <- vri_bem[which(!is.na(vri_bem$TEIS_ID)),]
+vri_bem <- vribem_view(conn, validate_intersect = FALSE)
 
 # 1b ----
 beu_bec_csv <- fread(system.file("csv/Allowed_BEC_BEUs_NE_ALL.csv", package = "SSGBM.VRI.BEM")) # fread("inst/csv/Allowed_BEC_BEUs_NE_ALL.csv")
-rivers <- read_rivers(wkt_filter = aoi_wkt)
 
 vri_bem <- update_bem_from_vri(vri_bem = vri_bem,
                                rivers = rivers,

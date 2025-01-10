@@ -1,8 +1,9 @@
-Package: SSGBM.VRI.BEM
+Package: ssgbm
 Title: Vegetation Resource Inventory & Broad Ecosystem Mapping
-Version: 0.2.3.9000
+Version: 1.0.0.9000
 Authors@R: c(
-    person("Nicolas", "Gauthier", email = "nicolas@boostao.ca", role = c("aut", "cre"),
+    person("Karine", "Pigeon", email = "Karine.Pigeon@gov.bc.ca", role = c("cre")),
+    person("Nicolas", "Gauthier", email = "nicolas@boostao.ca", role = c("aut"),
        comment = c(ORCID = "0000-0003-0642-4130")),
     person("François", "Bornais", email = "francois@boostao.ca", role = c("aut"),
        comment = c(ORCID = "0000-0002-8676-759X")),
@@ -38,3 +39,5 @@ Depends:
     R (>= 4.2)
 LazyData: true
 Config/testthat/edition: 3
+URL:
+  https://github.com/bcgov/SSGBM-VRI-BEM

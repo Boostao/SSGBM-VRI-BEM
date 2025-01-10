@@ -7,7 +7,7 @@
 rename_geometry <- function(g, name){
   current <- attr(g, "sf_column")
   names(g)[names(g)==current] <- name
-  st_geometry(g) <- name
+  sf::st_geometry(g) <- name
   g
 }
 
@@ -260,5 +260,18 @@ parmapply <- function() {
   } else {
     options("mc.cores" = parallel::detectCores())
     parallel::mcmapply
+  }
+}
+
+#'  Create the filtered views from the source table for the analysis
+#'  
+#' @param conn A database connection.
+#' @param wkt_filter A well-known text geometry of the area of interest.
+#' @param tables A character vector of tables to create views from.
+#' @export
+filtered_views <- function(conn = init_conn(), wkt_filter, tables = c("BEM","BURN","CCB","FIRE","GLACIERS","LAKES","RIVERS","VRI","WETLANDS")) {
+  duckdb::dbSendQuery(conn, "SET VARIABLE AOI = (SELECT ST_GeomFromText('%s'));" |> sprintf(wkt_filter))
+  for (t in tables) {
+    duckdb::dbSendQuery(conn, "CREATE OR REPLACE TEMP VIEW V_%s AS (SELECT * FROM %s WHERE ST_Intersects(Shape, getVariable('AOI')));" |> sprintf(t, t))
   }
 }

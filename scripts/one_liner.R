@@ -1,7 +1,7 @@
 devtools::load_all()
 
 # Piping
-options("bcdata.chunk_limit" = 1000000, "bcdata.single_download_limit" = 100000000)
+options("bcdata.chunk_limit" = 9999, "bcdata.single_download_limit" = 9999)
 beu_bec_csv <- fread("inst/csv/Allowed_BEC_BEUs_NE_ALL.csv")
 beu_wetland_update_csv <- fread("inst/csv/beu_wetland_updates.csv")
 

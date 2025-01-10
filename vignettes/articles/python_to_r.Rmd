@@ -51,7 +51,7 @@ The purpose of this article is to make it easier for someone who knew the Python
 
 ### Awesome Functions 
 
-There are also 2 R "master" function that can be used instead of calling each of the functions above individually.
+There are also 2 R "higer-level"  function that can be used instead of calling each of the functions above individually.
 
  * `create_unique_ecosystem_from_scratch` : Run everything from 1a) to 2). 
  * `create_RRM_ecosystem_from_scratch` : Runs everything from 1a) to 5).
