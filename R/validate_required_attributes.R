@@ -7,7 +7,7 @@
 #' @export
 #'
 
-validate_required_attributes <- function(ifc, required_attributes){
+validate_required_attributes <- function(conn, tbl, required_attributes){
 
   missing_attributes <- setdiff(required_attributes,
                                 names(ifc))

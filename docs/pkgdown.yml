@@ -1,8 +1,8 @@
-pandoc: '2.18'
-pkgdown: 2.0.6
+pandoc: 2.9.2.1
+pkgdown: 2.1.1
 pkgdown_sha: ~
 articles:
-  python_to_r: python_to_r.html
-  update-doc: update-doc.html
-last_built: 2022-11-22T02:32Z
-
+  articles/getting_started: getting_started.html
+  articles/python_to_r: python_to_r.html
+  articles/update-doc: update-doc.html
+last_built: 2024-11-17T18:30Z
