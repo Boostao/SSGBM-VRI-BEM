@@ -386,6 +386,7 @@ meta_proj4 <- function(dsn, layer, geom_f) {
   
   if (!length(res$layers)) {
     logger::log_warn("No layer found in dsn for proj4 [%s]." |> sprintf(dsn))
+    return("")
   }
 
   if (missing(layer)) {
@@ -402,6 +403,7 @@ meta_proj4 <- function(dsn, layer, geom_f) {
 
   if (!length(res$layers[[l]]$geometry_fields)) {
     logger::log_warn("No geometry field found for layer in dsn for proj4 [%s: %s]." |> sprintf(dsn, layer))
+    return("")
   }
 
   if (missing(geom_f)) {
