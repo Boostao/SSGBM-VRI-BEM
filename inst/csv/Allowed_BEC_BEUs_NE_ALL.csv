@@ -1,4 +1,4 @@
-BGC Subzone,BEU_#,Name,Script rule,Change to BEU =
+BGC_Subzone,BEU,Name,Script_Rule,Change_to_BEU
 BAFAun,AC,Trembling Aspen Copse,Error,AS
 BAFAunp,AC,Trembling Aspen Copse,Error,AS
 ESSFmc,AC,Trembling Aspen Copse,Error,"Note error ""BEU assigned not allowed in this BGC"" (mapper needs to assess)"
@@ -583,8 +583,8 @@ SBSvk,CL,Cliff,Allowed,
 SBSwk,CL,Cliff,Allowed,
 SWBmk,CL,Cliff,Allowed,
 SWBmks,CL,Cliff,Allowed,
-CWHws,CS,Coastal Western Hemlock–Subalpine Fir,Error,CW
-ESSFmc,CS,–Subalpine Fir,Error,EW
+CWHws,CS,Coastal Western Hemlock - Subalpine Fir,Error,CW
+ESSFmc,CS,Subalpine Fir,Error,EW
 ESSFmm,CS,Coastal Western Hemlock - Douglas-fir,Error,EW
 ESSFmv,CS,Coastal Western Hemlock - Douglas-fir,Error,EW
 ESSFun,CS,Coastal Western Hemlock - Douglas-fir,Error,EW
@@ -2494,8 +2494,8 @@ BWBSdk,WP,Subalpine Fir- Mountain Hemlock Wet Parkland,Error,FP
 CMAunp,AH,Alpine Heath,Allowed,
 CWHvm,CD,Coastal Douglas-fir,Error,FR
 CWHvm,CR,Black Cottonwood Riparian Habitat Class,Allowed,
-CWHvm,CW,Coastal Western Hemlock–Douglas-fir,Allowed,
-CWHvm,HS,Western Hemlock– Sitka Spruce,Error,CH
+CWHvm,CW,Coastal Western Hemlockï¿½Douglas-fir,Allowed,
+CWHvm,HS,Western Hemlockï¿½ Sitka Spruce,Error,CH
 CWHws,CD,Coastal Douglas-fir,Error,FR
 CWHws,CR,Black Cottonwood Riparian Habitat Class,Error,SR
 MSxv,BB,Black Spruce Bog,Error,WG

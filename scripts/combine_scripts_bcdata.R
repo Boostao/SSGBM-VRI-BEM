@@ -7,16 +7,18 @@ conn <- init_conn()
 filtered_views(conn, aoi_wkt)
 
 # 1a ----
-vri_bem <- vribem_view(conn, validate_intersect = FALSE)
+vribem_view(conn, validate_intersect = FALSE)
 
 # 1b ----
-beu_bec_csv <- fread(system.file("csv/Allowed_BEC_BEUs_NE_ALL.csv", package = "SSGBM.VRI.BEM")) # fread("inst/csv/Allowed_BEC_BEUs_NE_ALL.csv")
+#beu_bec_csv <- fread(system.file("csv/Allowed_BEC_BEUs_NE_ALL.csv", package = "ssgbm")) # fread("inst/csv/Allowed_BEC_BEUs_NE_ALL.csv")
+beu_bec <- duckplyr::read_csv_duckdb(system.file("csv/Allowed_BEC_BEUs_NE_ALL.csv", package = "ssgbm")) # beu_bec <- duckplyr::read_csv_duckdb("inst/csv/Allowed_BEC_BEUs_NE_ALL.csv")
+vri_bem <- update_bem_from_vri(conn = conn, beu_bec = beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE)
 
-vri_bem <- update_bem_from_vri(vri_bem = vri_bem,
-                               rivers = rivers,
-                               beu_bec = beu_bec_csv,
-                               clear_site_ma = TRUE,
-                               use_ifelse = TRUE)
+# vri_bem <- update_bem_from_vri(vri_bem = vri_bem,
+#                                rivers = rivers,
+#                                beu_bec = beu_bec_csv,
+#                                clear_site_ma = TRUE,
+#                                use_ifelse = TRUE)
 
 #1c ----
 beu_wetland_update_csv <- fread(system.file("csv/beu_wetland_updates.csv", package = "SSGBM.VRI.BEM")) # fread("inst/csv/beu_wetland_updates.csv")

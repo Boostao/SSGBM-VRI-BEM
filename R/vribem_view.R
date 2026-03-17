@@ -27,20 +27,27 @@ vribem_view <- function(conn, validate_intersect = FALSE) {
   bem_columns <- DBI::dbListFields(conn, "BEM") |> setdiff("Shape")
 
   duckdb::dbSendQuery(conn, paste0("
-    CREATE OR REPLACE TEMP VIEW V_VRIBEM AS (    
-      SELECT 
-        ", paste0("VRI.", setdiff(vri_columns, c("VRI_BEC_ZONE","VRI_BEC_SUBZON","VRI_BEC_VRT","VRI_BEC_PHASE","Shape_Area","Area_Ha")), collapse = ","),",
-        coalesce(VRI.VRI_BEC_ZONE, BEM.BGC_ZONE) BGC_ZONE,
-        coalesce(VRI.VRI_BEC_SUBZON, BEM.BGC_SUBZON) BGC_SUBZON,
-        coalesce(VRI.VRI_BEC_VRT, BEM.BGC_VRT::VARCHAR) BGC_VRT,
-        coalesce(VRI.VRI_BEC_PHASE, BEM.BGC_PHASE) BGC_PHASE,
-        ", paste0("BEM.", setdiff(bem_columns, c("BGC_ZONE","BGC_SUBZON","BGC_VRT","BGC_PHASE")), collapse = ","),",
-        ST_Intersection(BEM.Shape, VRI.Shape) Shape,
-        ST_Area(ST_Intersection(BEM.Shape, VRI.Shape)) Shape_Area,
+    CREATE OR REPLACE TEMP VIEW V_VRIBEM AS ( 
+      SELECT * , 
+        EXISTS (SELECT 1 FROM V_RIVERS riv WHERE ST_Intersects(riv.Shape, a.Shape)) AS INTERSECTS_RIVER
+      FROM  (  
+        SELECT 
+          ", paste0("VRI.", setdiff(vri_columns, c("VRI_BEC_ZONE","VRI_BEC_SUBZON","VRI_BEC_VRT","VRI_BEC_PHASE","Shape_Area","Area_Ha")), collapse = ","),",
+          coalesce(VRI.VRI_BEC_ZONE, BEM.BGC_ZONE) BGC_ZONE,
+          coalesce(VRI.VRI_BEC_SUBZON, BEM.BGC_SUBZON) BGC_SUBZON,
+          coalesce(VRI.VRI_BEC_VRT, BEM.BGC_VRT::VARCHAR) BGC_VRT,
+          coalesce(VRI.VRI_BEC_PHASE, BEM.BGC_PHASE) BGC_PHASE,
+          ", paste0("BEM.", setdiff(bem_columns, c("BGC_ZONE","BGC_SUBZON","BGC_VRT","BGC_PHASE")), collapse = ","),",
+          ST_Intersection(BEM.Shape, VRI.Shape) Shape,
+          ST_Area(ST_Intersection(BEM.Shape, VRI.Shape)) Shape_Area,
+          VRI.Shape AS VRI_Shape, 
+          ST_Area(VRI.Shape) AS VRI_Area, 
+          
         
-      FROM V_VRI VRI
-      JOIN V_BEM BEM
-          ON ST_Intersects(BEM.Shape, VRI.Shape)
+        FROM V_VRI VRI
+        JOIN V_BEM BEM
+            ON ST_Intersects(BEM.Shape, VRI.Shape)
+      ) a
     );
     CREATE OR REPLACE TEMP VIEW V_VRIBEM_INTERSECTION AS (    
       SELECT 

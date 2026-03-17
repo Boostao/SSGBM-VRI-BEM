@@ -7,12 +7,23 @@
 #' @export
 #'
 
-validate_required_attributes <- function(conn, tbl, required_attributes){
+validate_required_attributes <- function(ifc, required_attributes){
 
   missing_attributes <- setdiff(required_attributes,
-                                names(ifc))
+                                colnames(ifc))
 
   if (length(missing_attributes) > 0) {
     stop("The following attributes were not found : ", paste(missing_attributes, collapse = ", "))
+  }
+}
+
+
+validate_views_column_names <- function(conn, obj, required_names) {
+
+  obj_columns <- duckdb::dbListFields(conn, obj)
+  missing_cols <- setdiff(required_names, obj_columns)
+
+  if (length(missing_cols) > 0) {
+    stop("The following columns were not found in the view : ", paste(missing_cols, collapse = ", "))
   }
 }
