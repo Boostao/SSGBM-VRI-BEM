@@ -42,6 +42,8 @@ vribem_view <- function(conn, validate_intersect = FALSE) {
           ST_Area(ST_Intersection(BEM.Shape, VRI.Shape)) Shape_Area,
           VRI.Shape AS VRI_Shape, 
           ST_Area(VRI.Shape) AS VRI_Area, 
+          round(ST_Area(VRI.Shape)/10000, 2) AS Area_Ha
+
           
         
         FROM V_VRI VRI

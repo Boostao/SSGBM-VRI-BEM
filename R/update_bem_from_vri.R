@@ -17,7 +17,7 @@
 #' @return sf object which contains adjusted map codes
 #' @import sf
 #' @import duckplyr
-#' @import dplyr
+#' @import dbplyr
 #' @import data.table
 #' @export
 
@@ -25,7 +25,7 @@ update_bem_from_vri <- function(conn, beu_bec, clear_site_ma = TRUE, use_ifelse 
 
   vribem_columns <- duckdb::dbListFields(conn, "V_VRIBEM")
   
-  vri_bem <- tbl(conn, "V_VRIBEM", prudence = "stingy") 
+  vri_bem <- tbl(conn, "V_VRIBEM") |> as_duckdb_tibble(prudence = "stingy")
 
   # validate inputs ----
   validate_views_column_names(conn = conn, 
@@ -65,7 +65,6 @@ update_bem_from_vri <- function(conn, beu_bec, clear_site_ma = TRUE, use_ifelse 
   }
   vri_bem <- mutate(vri_bem, 
     SITE_M3A = NA_character_, #M3A is always cleared
-    Area_Ha = as.numeric(round(VRI_Area/10000, 2)), 
     row_updated = FALSE, #helper column to track which rows were updated by corrections
     blank_eco_variables = FALSE #helper column to track which rows had ecological variables blanked out by corrections
     )
@@ -313,7 +312,7 @@ update_bem_from_vri <- function(conn, beu_bec, clear_site_ma = TRUE, use_ifelse 
     mutate(correction_cd = if_else(is.na(SMPL_TYPE) & SPEC_CD_1 %in% c("AC", "ACB", "ACT", "AT", "EP") & SPEC_PCT_1 >= 75 & STAND_A1 %in% c("C", "M") , 
                                     "STAND_A1_B", correction_cd)) |>
     mutate(STAND_A1 = if_else(correction_cd == "STAND_A1_B", "B", STAND_A1),
-           lbl_edit = if_else(correction_cd == "STAND_A1_B", paste0(lbl_edit, if_else(lbl_edit == "", "", "; "),
+           lbl_edit = if_else(correction_cd == "STAND_A1_B", dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "),
                                                                     "Updated STAND_A1 to 'B' because SPEC_CD_1 = '", SPEC_CD_1, "' and SPEC_PCT_1 >= 75 and STAND_A1 was 'C' or 'M'"), lbl_edit),
            row_updated = if_else(correction_cd == "STAND_A1_B", TRUE, row_updated))
   
@@ -323,7 +322,7 @@ update_bem_from_vri <- function(conn, beu_bec, clear_site_ma = TRUE, use_ifelse 
                                     SPEC_PCT_1 >= 50 & SPEC_PCT_1 < 75 & STAND_A1 %in% c("C", "B") , 
                                     "STAND_A1_M", correction_cd)) |>
     mutate(STAND_A1 = if_else(correction_cd == "STAND_A1_M", "M", STAND_A1),
-           lbl_edit = if_else(correction_cd == "STAND_A1_M", paste0(lbl_edit, if_else(lbl_edit == "", "", "; "),
+           lbl_edit = if_else(correction_cd == "STAND_A1_M", dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "),
                                                                     "Updated STAND_A1 to 'M' because SPEC_CD_1 = '", SPEC_CD_1, "' and SPEC_PCT_1 >= 50 and < 75 and STAND_A1 was 'C' or 'B'"), lbl_edit),
            row_updated = if_else(correction_cd == "STAND_A1_M", TRUE, row_updated)
           )
@@ -335,7 +334,7 @@ update_bem_from_vri <- function(conn, beu_bec, clear_site_ma = TRUE, use_ifelse 
                                     SPEC_PCT_1 >= 75 & STAND_A1 %in% "M" , 
                                     "STAND_A1_C", correction_cd)) |>
     mutate(STAND_A1 = if_else(correction_cd == "STAND_A1_C", "C", STAND_A1),
-           lbl_edit = if_else(correction_cd == "STAND_A1_C", paste0(lbl_edit, if_else(lbl_edit == "", "", "; "),
+           lbl_edit = if_else(correction_cd == "STAND_A1_C", dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "),
                                                                     "Updated STAND_A1 to 'C' because SPEC_CD_1 = '", SPEC_CD_1, "' and SPEC_PCT_1 >= 75 and STAND_A1 was 'M'"), lbl_edit),
            row_updated = if_else(correction_cd == "STAND_A1_C", TRUE, row_updated))
 
@@ -355,7 +354,7 @@ update_bem_from_vri <- function(conn, beu_bec, clear_site_ma = TRUE, use_ifelse 
   # line 654
   vri_bem <- vri_bem |>
     mutate(DEC_Total = if_else(is.na(SMPL_TYPE), SDEC_1 + SDEC_2 + SDEC_3, DEC_Total)) |> # Should we put NA for rows with SMPL_TYPE not NA?
-    mutate(lbl_edit = if_else(is.na(SMPL_TYPE) & DEC_Total != 10, paste0(lbl_edit, if_else(lbl_edit == "", "", "; "),
+    mutate(lbl_edit = if_else(is.na(SMPL_TYPE) & DEC_Total != 10, dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "),
                              "**** DECILE TOTAL ", SDEC_1, "+", SDEC_2, "+", SDEC_3, "=", DEC_Total), lbl_edit),
            row_updated = if_else(is.na(SMPL_TYPE) & DEC_Total != 10, TRUE, row_updated))
   
@@ -373,7 +372,7 @@ update_bem_from_vri <- function(conn, beu_bec, clear_site_ma = TRUE, use_ifelse 
   
   vri_bem <- mutate(vri_bem, 
     SITE_M3A = if_else(INTERSECTS_RIVER, "a", SITE_M3A),
-    lbl_edit = if_else(INTERSECTS_RIVER, paste0(lbl_edit, if_else(lbl_edit == "", "", "; "),
+    lbl_edit = if_else(INTERSECTS_RIVER, dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "),
                              "Updated SITE_M3A from '", SITE_M3A, "' to 'a' because polygon is adjacent to river"), lbl_edit))
   
     # remove temp variables
@@ -383,16 +382,14 @@ update_bem_from_vri <- function(conn, beu_bec, clear_site_ma = TRUE, use_ifelse 
 }
 
 combine_duplicated_BEUMC <- function(ifc, use_ifelse = FALSE) { 
-
   ifc <- ifc |>
-    mutate(duplicated = BEUMC_S1 == BEUMC_S2 & is.na(SMPL_TYPE)) |>
+    mutate(duplicated = coalesce(BEUMC_S1 == BEUMC_S2 & !!sql("SMPL_TYPE IS NULL"), FALSE)) |>
     mutate(
       SDEC_1 = if_else(duplicated, SDEC_1 + SDEC_2, SDEC_1),
       SDEC_2 = if_else(duplicated, SDEC_3, SDEC_2),
       SDEC_3 = if_else(duplicated, 0L, SDEC_3),
-      lbl_edit = if_else(duplicated, paste0(lbl_edit, if_else(lbl_edit == "", "", "; "),
-                                            "Combined components 1 and 2 with same BEUMC_S# code into single component 1"), 
-                                    lbl_edit),
+      lbl_edit = if_else(duplicated & lbl_edit != '', dd$concat(lbl_edit, '; Combined components 1 and 2 with same BEUMC_S# code into single component 1'), 
+                         if_else(duplicated, 'Combined components 1 and 2 with same BEUMC_S# code into single component 1', lbl_edit)),                             
       row_updated = if_else(duplicated, use_ifelse, row_updated)
     ) |>
     shift_eco_variables(cond_var = duplicated, shift_pattern = list(c(2,3), c(3,NA))) |>
@@ -410,7 +407,7 @@ remove_inadequate_wetlands <- function(ifc){
   
   #Replace wetland in 3rd component ----
   ifc <- ifc |>
-    mutate(treed_WL_3 = is.na(SMPL_TYPE) & BCLCS_LV_4 %in% c("TB", "TC", "TM") & BEUMC_S3 == "WL" & !row_updated) |>
+    mutate(treed_WL_3 = coalesce(is.na(SMPL_TYPE) & BCLCS_LV_4 %in% c("TB", "TC", "TM") & BEUMC_S3 == "WL" & !row_updated, FALSE)) |>
     mutate(SDEC_2 = if_else(treed_WL_3, SDEC_2 + SDEC_3, SDEC_2),
            SDEC_3 = if_else(treed_WL_3, 0L, SDEC_3),
            lbl_edit = if_else(treed_WL_3, "Removed WL in component 3 because BCLCS_LV_4 = 'TB', 'TC' or 'TM'", lbl_edit),
@@ -421,8 +418,8 @@ remove_inadequate_wetlands <- function(ifc){
 
   #Replace wetlands in 2nd component ----
   ifc <- ifc |>
-    mutate(treed_WL_2_from_3 = is.na(SMPL_TYPE) & BCLCS_LV_4 %in% c("TB", "TC", "TM") & BEUMC_S2 == "WL" & SDEC_3 > 0 & !row_updated) |>
-    mutate(treed_WL_2_to_1 = is.na(SMPL_TYPE) & BCLCS_LV_4 %in% c("TB", "TC", "TM") & BEUMC_S2 == "WL" & SDEC_3 %in% c(0, NA_integer_) & !row_updated) 
+    mutate(treed_WL_2_from_3 = coalesce(is.na(SMPL_TYPE) & BCLCS_LV_4 %in% c("TB", "TC", "TM") & BEUMC_S2 == "WL" & SDEC_3 > 0 & !row_updated, FALSE)) |>
+    mutate(treed_WL_2_to_1 = coalesce(is.na(SMPL_TYPE) & BCLCS_LV_4 %in% c("TB", "TC", "TM") & BEUMC_S2 == "WL" & SDEC_3 %in% c(0, NA_integer_) & !row_updated, FALSE))
     
   ## When there is a value in 3rd component update 2nd from 3rd ----
   ifc <- shift_eco_variables(ifc, cond_var = treed_WL_2_from_3, shift_pattern = list(c(2,3), c(3,NA))) |>
@@ -444,7 +441,7 @@ remove_inadequate_wetlands <- function(ifc){
 
   #Replace wetlands from 1st component -----
   ifc <- ifc |>
-    mutate(treed_WL_1_from_2 = is.na(SMPL_TYPE) & BCLCS_LV_4 %in% c("TB", "TC", "TM") & BEUMC_S1 == "WL" & SDEC_2 > 0 & !row_updated) |>
+    mutate(treed_WL_1_from_2 = coalesce(is.na(SMPL_TYPE) & BCLCS_LV_4 %in% c("TB", "TC", "TM") & BEUMC_S1 == "WL" & SDEC_2 > 0 & !row_updated, FALSE)) |>
     shift_eco_variables(cond_var = treed_WL_1_from_2, shift_pattern = list(c(1,2), c(2,3), c(3,NA))) |>
     mutate(SDEC_3 = if_else(treed_WL_1_from_2, 0L, SDEC_3),
            lbl_edit = if_else(treed_WL_1_from_2, "Removed WL in component 1 because BCLCS_LV_4 = 'TB', 'TC' or 'TM'", lbl_edit),
@@ -454,7 +451,7 @@ remove_inadequate_wetlands <- function(ifc){
 
   #Warning if polygon is pule WL ----
   ifc <- ifc |>
-    mutate(treed_pure_WL = is.na(SMPL_TYPE) & BCLCS_LV_4 %in% c("TB", "TC", "TM") & BEUMC_S1 %in% c('0', NA_integer_)) |>
+    mutate(treed_pure_WL = coalesce(is.na(SMPL_TYPE) & BCLCS_LV_4 %in% c("TB", "TC", "TM") & BEUMC_S1 %in% c('0', NA_integer_), FALSE)) |>
     mutate(lbl_edit = if_else(treed_pure_WL, "**** Warning: Polygon is pure WL, but BCLCS_LV_4 = 'TB', 'TC' or 'TM'", lbl_edit),
            row_updated = if_else(treed_pure_WL, TRUE, row_updated)) |>
     select(-treed_pure_WL)
@@ -512,36 +509,36 @@ check_allowed_bec_beu <- function(vri_bem, beu_bec) {
 
   
   # bgc subzone and beu mapcode
-  vri_bem <- mutate(vri_bem, merge_key = paste0(BGC_ZONE, BGC_SUBZON))|>
+  vri_bem <- mutate(vri_bem, merge_key = dd$concat(BGC_ZONE, BGC_SUBZON))|>
     left_join(select(beu_bec, -Name), by = c("merge_key" = "BGC_Subzone", "BEUMC_S1" = "BEU"), suffix = c("", "_bec_1"), copy = TRUE) |>
     # merge and change beu for decile 1
-    mutate(BEUMC_S1 = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) == 2, Change_to_BEU, BEUMC_S1),
-           lbl_edit = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) == 2, paste0(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S1, " corrected to ", Change_to_BEU, " in decile 1"), lbl_edit),
-           row_updated = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) == 2, TRUE, row_updated)) |>
-    mutate(lbl_edit = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) != 2, paste0(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S1, " in decile 1 is invalid combination (mapper needs to assess)"), lbl_edit),
-           row_updated = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) != 2, TRUE, row_updated)) |>
-    mutate(lbl_edit = if_else(Script_Rule == "Error" & is.na(Change_to_BEU), paste0(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S1, " in decile 1 combination is not listed"), lbl_edit),
-           row_updated = if_else(Script_Rule == "Error" & is.na(Change_to_BEU), TRUE, row_updated)) |>
+    mutate(BEUMC_S1 = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) == 2, FALSE), Change_to_BEU, BEUMC_S1),
+           lbl_edit = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) == 2, FALSE), dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S1, " corrected to ", Change_to_BEU, " in decile 1"), lbl_edit),
+           row_updated = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) == 2, FALSE), TRUE, row_updated)) |>
+    mutate(lbl_edit = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) != 2, FALSE), dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S1, " in decile 1 is invalid combination (mapper needs to assess)"), lbl_edit),
+           row_updated = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) != 2, FALSE), TRUE, row_updated)) |>
+    mutate(lbl_edit = if_else(coalesce(Script_Rule == "Error" & is.na(Change_to_BEU), FALSE), dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S1, " in decile 1 combination is not listed"), lbl_edit),
+           row_updated = if_else(coalesce(Script_Rule == "Error" & is.na(Change_to_BEU), FALSE), TRUE, row_updated)) |>
     select(-c(Script_Rule, Change_to_BEU)) |>
     # merge and change beu for decile 2
     left_join(select(beu_bec, -Name), by = c("merge_key" = "BGC_Subzone", "BEUMC_S2" = "BEU"), suffix = c("", "_bec_2"), copy = TRUE) |> 
-    mutate(BEUMC_S2 = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) == 2, Change_to_BEU, BEUMC_S2),
-           lbl_edit = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) == 2, paste0(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S2, " corrected to ", Change_to_BEU, " in decile 2"), lbl_edit),
-           row_updated = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) == 2, TRUE, row_updated)) |>
-    mutate(lbl_edit = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) != 2, paste0(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S2, " in decile 2 is invalid combination (mapper needs to assess)"), lbl_edit),
-           row_updated = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) != 2, TRUE, row_updated)) |>
-    mutate(lbl_edit = if_else(Script_Rule == "Error" & is.na(Change_to_BEU), paste0(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S2, " in decile 2 combination is not listed"), lbl_edit),
-           row_updated = if_else(Script_Rule == "Error" & is.na(Change_to_BEU), TRUE, row_updated)) |>
+    mutate(BEUMC_S2 = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) == 2, FALSE), Change_to_BEU, BEUMC_S2),
+           lbl_edit = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) == 2, FALSE), dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S2, " corrected to ", Change_to_BEU, " in decile 2"), lbl_edit),
+           row_updated = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) == 2, FALSE), TRUE, row_updated)) |>
+    mutate(lbl_edit = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) != 2, FALSE), dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S2, " in decile 2 is invalid combination (mapper needs to assess)"), lbl_edit),
+           row_updated = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) != 2, FALSE), TRUE, row_updated)) |>
+    mutate(lbl_edit = if_else(coalesce(Script_Rule == "Error" & is.na(Change_to_BEU), FALSE), dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S2, " in decile 2 combination is not listed"), lbl_edit),
+           row_updated = if_else(coalesce(Script_Rule == "Error" & is.na(Change_to_BEU), FALSE), TRUE, row_updated)) |>
     select(-c(Script_Rule, Change_to_BEU)) |>
     # merge and change beu for decile 3
     left_join(select(beu_bec, -Name), by = c("merge_key" = "BGC_Subzone", "BEUMC_S3" = "BEU"), suffix = c("", "_bec_3"), copy = TRUE) |>
-    mutate(BEUMC_S3 = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) == 2, Change_to_BEU, BEUMC_S3),
-           lbl_edit = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) == 2, paste0(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S3, " corrected to ", Change_to_BEU, " in decile 3"), lbl_edit),
-           row_updated = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) == 2, TRUE, row_updated)) |>
-    mutate(lbl_edit = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) != 2, paste0(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S3, " in decile 3 is invalid combination (mapper needs to assess)"), lbl_edit),
-           row_updated = if_else(Script_Rule == "Error" & nchar(Change_to_BEU) != 2, TRUE, row_updated)) |>
-    mutate(lbl_edit = if_else(Script_Rule == "Error" & is.na(Change_to_BEU), paste0(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S3, " in decile 3 combination is not listed"), lbl_edit),
-           row_updated = if_else(Script_Rule == "Error" & is.na(Change_to_BEU), TRUE, row_updated)) |>  
+    mutate(BEUMC_S3 = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) == 2, FALSE), Change_to_BEU, BEUMC_S3),
+           lbl_edit = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) == 2, FALSE), dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S3, " corrected to ", Change_to_BEU, " in decile 3"), lbl_edit),
+           row_updated = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) == 2, FALSE), TRUE, row_updated)) |>
+    mutate(lbl_edit = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) != 2, FALSE), dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S3, " in decile 3 is invalid combination (mapper needs to assess)"), lbl_edit),
+           row_updated = if_else(coalesce(Script_Rule == "Error" & dd$len(Change_to_BEU) != 2, FALSE), TRUE, row_updated)) |>
+    mutate(lbl_edit = if_else(coalesce(Script_Rule == "Error" & is.na(Change_to_BEU), FALSE), dd$concat(lbl_edit, if_else(lbl_edit == "", "", "; "), merge_key, " ", BEUMC_S3, " in decile 3 combination is not listed"), lbl_edit),
+           row_updated = if_else(coalesce(Script_Rule == "Error" & is.na(Change_to_BEU), FALSE), TRUE, row_updated)) |>  
     select(-c(Script_Rule, Change_to_BEU))
 
   vri_bem
