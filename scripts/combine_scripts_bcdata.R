@@ -1,11 +1,5 @@
 
-options(DUCKPLYR_FALLBACK_INFO = TRUE, 
-       # DUCKPLYR_FALLBACK_COLLECT = 0,
-        DUCKPLYR_FALLBACK_AUTOUPLOAD = FALSE,
-      DUCKPLYR_FALLBACK_VERBOSE = TRUE, 
-    DUCKPLYR_FORCE = TRUE)
 library(duckdb)
-library(duckplyr)
 devtools::load_all()
 
 aoi_wkt <- "MULTIPOLYGON (((1065018 932215.1, 941827.7 932215.1, 941827.7 1016988, 1065018 1016988, 1065018 932215.1)))"
@@ -18,6 +12,9 @@ filtered_views(conn, aoi_wkt)
 vribem_view(conn, validate_intersect = FALSE)
 
 # 1b ----
+# TODDO create init for beu_bec_corr 
+duckdb::duckdb_read_csv(conn, "beu_bec_corr",  "inst/csv/Allowed_BEC_BEUs_NE_ALL.csv", temporary = TRUE)
+vribem_corrections_view(conn, beu_bec = "beu_bec_corr")
 #beu_bec_csv <- fread(system.file("csv/Allowed_BEC_BEUs_NE_ALL.csv", package = "ssgbm")) # fread("inst/csv/Allowed_BEC_BEUs_NE_ALL.csv")
 beu_bec <- duckplyr::read_csv_duckdb(system.file("csv/Allowed_BEC_BEUs_NE_ALL.csv", package = "ssgbm")) # beu_bec <- duckplyr::read_csv_duckdb("inst/csv/Allowed_BEC_BEUs_NE_ALL.csv")
 vri_bem <- update_bem_from_vri(conn = conn, beu_bec = beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE)
