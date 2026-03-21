@@ -27,12 +27,13 @@ import_rules_to_duckdb(conn,
   rules_xl = "../SSGBM-VRI-BEM-data/Rules_for_scripting_improved_forested_BEUs_Skeena_07Mar2022.xlsx",
   tbl_name = "beu_update_rules")
 
+# TODO Create another table instead of updatinf wetland_corrections table.... 
 vribem_beu_rules_update(conn, 
   vri_bem = "VRIBEM_WETLANDS_CORRECTIONS",
   rules_tbl = "beu_update_rules")
 
 #2 ----
-unique_eco <- create_unique_ecosystem_dt(vri_bem = vri_bem)
+unique_eco <- create_unique_ecosystem_dt(conn = conn, vri_bem =  "VRIBEM_WETLANDS_CORRECTIONS")
 
 fwrite(unique_eco, file = "../unique_ecosystem.csv")
 

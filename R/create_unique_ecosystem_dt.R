@@ -16,16 +16,26 @@
 #'
 #' @import data.table
 #' @export
-create_unique_ecosystem_dt <- function(vri_bem, current_unique_ecosystem_csv = NULL) {
+create_unique_ecosystem_dt <- function(conn, vri_bem, current_unique_ecosystem_csv = NULL) {
 
-  if (FALSE) {
-    FREQ<-merge_ind<-merge_ind.x<-merge_ind.y<-NULL
-  }
-
-  vri_bem <- as.data.table(vri_bem)
-
-  unique_ecosystem_dt <- summarize_unique_ecosystem(vri_bem)
-
+  unique_ecosystem_dt <- DBI::dbGetQuery(conn, 
+    paste0("
+      SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEU_MC, count(*) AS FREQ
+      FROM (
+        SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC_S1 AS BEU_MC
+        FROM ", vri_bem, " 
+        WHERE SDEC_1 > 0
+        UNION ALL
+        SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC_S2 AS BEU_MC 
+        FROM ", vri_bem, " 
+        WHERE SDEC_2 > 0
+        UNION ALL
+        SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC_S3 AS BEU_MC 
+        FROM ", vri_bem, " 
+        WHERE SDEC_3 > 0
+      ) AS sq
+      GROUP BY 1, 2, 3, 4, 5;"))|> setDT()
+  
   if (!is.null(current_unique_ecosystem_csv)) {
     current_unique_ecosysteme_dt <- fread(current_unique_ecosystem_csv)
     format_unique_ecosystem_dt(current_unique_ecosysteme_dt)
@@ -56,5 +66,5 @@ create_unique_ecosystem_dt <- function(vri_bem, current_unique_ecosystem_csv = N
   } else {
     return(create_empty_forest_structure_variables(unique_ecosystem_dt))
   }
+  
 }
-
