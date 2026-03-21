@@ -139,7 +139,7 @@ update_bem_from_wetlands <- function(vri_bem, wetlands, buc) {
                Code_WL8 = i.Code_WL8,
                Code_WL10 = i.Code_WL10)]
 
-  # Allowed BEU codes adjustments (line 364) -----
+  
   #Added "ES", "SC","SH","SW" to water features
   #Changed to ignore any water BEU (including WL) with a decile of 10
   #Removed expression ignoring BCLC tree levels because it leads to missing wetland and riparian corridors

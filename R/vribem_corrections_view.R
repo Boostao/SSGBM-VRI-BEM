@@ -1,7 +1,5 @@
 vribem_corrections_view <- function(conn, beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE){
   
-  vri_bem <- tbl(conn, "V_VRIBEM") |> as_duckdb_tibble(prudence = "stingy")
-
   # validate inputs ----
   validate_views_column_names(conn = conn, 
                               obj = "V_VRIBEM",

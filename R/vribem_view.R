@@ -29,6 +29,7 @@ vribem_view <- function(conn, validate_intersect = FALSE) {
   duckdb::dbSendQuery(conn, paste0("
     CREATE OR REPLACE TEMP VIEW V_VRIBEM AS ( 
       SELECT * , 
+        round(ST_Area(a.Shape)/10000, 2) AS Area_Ha,
         EXISTS (SELECT 1 FROM V_RIVERS riv WHERE ST_Intersects(riv.Shape, a.Shape)) AS INTERSECTS_RIVER
       FROM  (  
         SELECT 
@@ -41,8 +42,8 @@ vribem_view <- function(conn, validate_intersect = FALSE) {
           ST_Intersection(BEM.Shape, VRI.Shape) Shape,
           ST_Area(ST_Intersection(BEM.Shape, VRI.Shape)) Shape_Area,
           VRI.Shape AS VRI_Shape, 
-          ST_Area(VRI.Shape) AS VRI_Area, 
-          round(ST_Area(VRI.Shape)/10000, 2) AS Area_Ha
+          ST_Area(VRI.Shape) AS VRI_Area 
+          
 
           
         
@@ -60,6 +61,7 @@ vribem_view <- function(conn, validate_intersect = FALSE) {
       FROM V_VRIBEM
     );
   "))
+  
 
   if (isTRUE(validate_intersect)) {
     duckdb::dbSendQuery(conn, "

@@ -1,9 +1,8 @@
 
-library(duckdb)
 devtools::load_all()
 
 aoi_wkt <- "MULTIPOLYGON (((1065018 932215.1, 941827.7 932215.1, 941827.7 1016988, 1065018 1016988, 1065018 932215.1)))"
-terra::vect(aoi_wkt, crs = "EPSG:3005") |> terra::plet()
+#terra::vect(aoi_wkt, crs = "EPSG:3005") |> terra::plet()
 
 conn <- init_conn()
 filtered_views(conn, aoi_wkt)
@@ -14,27 +13,23 @@ vribem_view(conn, validate_intersect = FALSE)
 # 1b ----
 # TODDO create init for beu_bec_corr 
 duckdb::duckdb_read_csv(conn, "beu_bec_corr",  "inst/csv/Allowed_BEC_BEUs_NE_ALL.csv", temporary = TRUE)
-vribem_corrections_view(conn, beu_bec = "beu_bec_corr")
-#beu_bec_csv <- fread(system.file("csv/Allowed_BEC_BEUs_NE_ALL.csv", package = "ssgbm")) # fread("inst/csv/Allowed_BEC_BEUs_NE_ALL.csv")
-beu_bec <- duckplyr::read_csv_duckdb(system.file("csv/Allowed_BEC_BEUs_NE_ALL.csv", package = "ssgbm")) # beu_bec <- duckplyr::read_csv_duckdb("inst/csv/Allowed_BEC_BEUs_NE_ALL.csv")
-vri_bem <- update_bem_from_vri(conn = conn, beu_bec = beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE)
 
-# vri_bem <- update_bem_from_vri(vri_bem = vri_bem,
-#                                rivers = rivers,
-#                                beu_bec = beu_bec_csv,
-#                                clear_site_ma = TRUE,
-#                                use_ifelse = TRUE)
+vribem_corrections_view(conn, beu_bec = "beu_bec_corr")
+
 
 #1c ----
-beu_wetland_update_csv <- fread(system.file("csv/beu_wetland_updates.csv", package = "SSGBM.VRI.BEM")) # fread("inst/csv/beu_wetland_updates.csv")
-wetlands <- read_wetlands(wkt_filter = aoi_wkt)
+# TODO create init for beu_wetland_updates
+duckdb::duckdb_read_csv(conn, "beu_wetland_updates",  "inst/csv/beu_wetland_updates.csv", temporary = TRUE)
+vri_bem_wetlands_corrections_view(conn, beu_wetland_updates = "beu_wetland_updates")
 
-vri_bem <- update_bem_from_wetlands(vri_bem = vri_bem,
-                                    wetlands = wetlands,
-                                    buc = beu_wetland_update_csv)
 #1d ----
-vri_bem <- update_beu_from_rules_dt(vri_bem = vri_bem,
-                                    rules_dt = "../SSGBM-VRI-BEM-data/Rules_for_scripting_improved_forested_BEUs_Skeena_07Mar2022.xlsx")
+import_rules_to_duckdb(conn, 
+  rules_xl = "../SSGBM-VRI-BEM-data/Rules_for_scripting_improved_forested_BEUs_Skeena_07Mar2022.xlsx",
+  tbl_name = "beu_update_rules")
+
+vribem_beu_rules_update(conn, 
+  vri_bem = "VRIBEM_WETLANDS_CORRECTIONS",
+  rules_tbl = "beu_update_rules")
 
 #2 ----
 unique_eco <- create_unique_ecosystem_dt(vri_bem = vri_bem)

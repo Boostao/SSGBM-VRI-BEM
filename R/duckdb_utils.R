@@ -13,3 +13,9 @@ add_col_to_tbl <- function(conn, tbl_name, col, type) {
     tbl_name, col, type))
 }
 
+
+update_tbl <- function(conn, tbl_name, set_expr, where_expr) {
+  duckdb::dbSendQuery(conn, 
+    sprintf("UPDATE %s SET %s WHERE %s;", 
+    tbl_name, set_expr, ifelse(is.null(where_expr), "1=1", where_expr)))
+}
