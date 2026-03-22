@@ -38,7 +38,8 @@ unique_eco <- create_unique_ecosystem_dt(conn = conn, vri_bem =  "VRIBEM_WETLAND
 fwrite(unique_eco, file = "../unique_ecosystem.csv")
 
 
-#3abc ----
+#3 ----
+
 elev_rast <- terra::rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
 
 vri_bem <- merge_elevation_raster_on_sf(elev_raster = elev_rast,
@@ -64,7 +65,7 @@ unique_eco_example <- read_unique_ecosystem_dt("inst/csv/Skeena_VRIBEM_LUT.csv")
   vri_bem <- merge_unique_ecosystem_fields(vri_bem = vri_bem,
                                          unique_ecosystem_dt = unique_eco_example)
 
-#4d3 ----
+#4 d3 ----
 vri_bem <- find_crown_area_dominant_values(vri = vri_bem)
 
 # calc hem fields

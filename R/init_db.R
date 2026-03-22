@@ -5,6 +5,7 @@
 #'   in RAM.
 #' @param ask Boolean, whether to ask before re-initializing existing tables.
 #' @param bem_dsn data source name for BEM data.
+#' @param bem_dsn data source name for BEM data.
 #' @export
 #' @import duckdb
 #' @details This needs to be run once to create the database and load the
@@ -12,7 +13,8 @@
 #'   for faster processing.
 init_db <- function(dbdir = defdb(),
                     ask = interactive(),
-                    bem_dsn = NULL) {
+                    bem_dsn = NULL,
+                    prem_dsn = NULL) {
   conn <- init_conn(dbdir)
   init_vri(conn, ask = ask)
   if (!is.null(bem_dsn) || duckdb::dbExistsTable(conn, "BEM")) {
@@ -28,6 +30,7 @@ init_db <- function(dbdir = defdb(),
   init_ccb(conn, ask = ask)
   init_burn(conn, ask = ask)
   init_fire(conn, ask = ask)
+  init_pem(conn, ask = ask, dsn = prem_dsn)
   duckdb::dbDisconnect(conn, shutdown = TRUE)
 }
 
@@ -312,7 +315,7 @@ init_generic <- function(conn = init_conn(),
       " |>
         sprintf(geom, layer_proj4, target_proj4)
     }
-    query <- "SELECT %s FROM ST_Read('%s%', layer := '%s%')" |>
+    query <- "SELECT %s FROM ST_Read('%s', layer := '%s')" |>
       sprintf(paste0(c(.include, gen_geom), collapse = ","), dsn, layer)
   }
 
@@ -461,6 +464,20 @@ init_burn <- function(conn = init_conn(),
     filter1 = filter1,
     .include = "BURN_SEVERITY_RATING"
   )
+}
+
+init_pem <- function(conn = init_conn(), 
+                     ask = interactive(),
+                     dsn = NULL,
+                     layer = "PEM_Mar2026",
+                     geom = "geom") {
+  init_generic(conn,
+               ask,
+               dsn,
+               layer,
+               geom,
+               tablename = "PEM", 
+              .include = c('PRED_NO', '".PRED_CLASS"', 'MODEL', '"MAP.RESPONSE"', 'AREA_M2'))
 }
 
 #' @rdname init
