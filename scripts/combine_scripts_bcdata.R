@@ -78,8 +78,9 @@ merge_unique_ecosystem_fields_duckdb(conn,
 find_crown_area_dominant_values_duckdb(conn, vri_bem_tbl = "VRIBEM_CCB")
 
 # calc hem fields
-fire <- read_fire(wkt_filter = aoi_wkt)
-vri_bem <- calc_hem_fields(vri_bem = vri_bem, fire = fire)
+#TODO slow need to speed this up
+calc_hem_fields_duckdb(conn, vri_bem_tbl = "VRIBEM_CCB", fire_tbl = "V_FIRE")
+
 
 #5 ----
 export_dt <- create_RRM_ecosystem(vri_bem = vri_bem)
