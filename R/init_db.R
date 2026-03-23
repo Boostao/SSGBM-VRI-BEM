@@ -432,14 +432,7 @@ init_ccb <- function(conn = init_conn(),
     geom,
     recordid = "b1b647a6-f271-42e0-9cd0-89ec24bce9f7",
     tablename = "CCB",
-    .include = c(
-      "HARVEST_START_DATE",
-      "HARVEST_END_DATE",
-      "HARVEST_START_YEAR_CALENDAR",
-      "HARVEST_MID_YEAR_CALENDAR",
-      "PERCENT_CLEARCUT",
-      "PERCENT_PARTIAL_CUT"
-    )
+    .include = c("HARVEST_START_YEAR_CALENDAR")
   )
 }
 

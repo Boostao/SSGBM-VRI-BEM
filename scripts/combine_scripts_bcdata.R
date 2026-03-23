@@ -35,29 +35,34 @@ vribem_beu_rules_update(conn,
 #2 ----
 unique_eco <- create_unique_ecosystem_dt(conn = conn, vri_bem =  "VRIBEM_WETLANDS_CORRECTIONS")
 
+
 fwrite(unique_eco, file = "../unique_ecosystem.csv")
 
 
 #3 ----
 
 elev_rast <- terra::rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
-
-vri_bem <- merge_elevation_raster_on_sf(elev_raster = elev_rast,
-                                        vri_bem = vri_bem,
-                                        elevation_threshold = 1400)
+merge_elevation_duckdb(conn = conn,
+                        vri_bem_tbl = "VRIBEM_WETLANDS_CORRECTIONS",
+                        elev_raster = elev_rast,
+                        elevation_threshold = 1400)
+#vri_bem <- merge_elevation_raster_on_sf(elev_raster = elev_rast,
+#                                        vri_bem = vri_bem,
+#                                        elevation_threshold = 1400)
 
 # merge cutblock
-ccb <- read_ccb(wkt_filter = aoi_wkt)
-
-vri_bem <- merge_geometry(vri_bem, ccb, tolerance = units::as_units(10, "m2"))
-
-#merge burn - What do you want to do with Burn?
-# burn <- read_burn(wkt_filter = aoi_wkt)
-# vri_bem <- merge_geometry(vri_bem, burn, tolerance = units::as_units(10, "m2"))
+#TODO add more verbose steps in fonction to see progress
+ merge_ccb_duckdb(conn,
+                  vri_bem_tbl  = "VRIBEM_ELEVATION",
+                  ccb_tbl      = "V_CCB",
+                  tolerance_m2 = 10,
+                  result_tbl   = "VRIBEM_CCB") 
 
 #4 ----
-vri_bem <- calc_forest_age_class(vri_bem = vri_bem,
-                                 most_recent_harvest_year = max(ccb$HARVEST_YEAR))
+
+calc_forest_age_class_duckdb(conn = conn, 
+                             vri_bem_tbl = "VRIBEM_CCB",
+                             ccb_tbl = "CCB")
 
 
 #4b /4d2 ----
