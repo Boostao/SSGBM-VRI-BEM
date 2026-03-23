@@ -74,7 +74,8 @@ merge_unique_ecosystem_fields_duckdb(conn,
                                      unique_ecosystem_dt = unique_eco_example)
 
 #4 d3 ----
-vri_bem <- find_crown_area_dominant_values(vri = vri_bem)
+
+find_crown_area_dominant_values_duckdb(conn, vri_bem_tbl = "VRIBEM_CCB")
 
 # calc hem fields
 fire <- read_fire(wkt_filter = aoi_wkt)
