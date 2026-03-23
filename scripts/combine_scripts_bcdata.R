@@ -66,9 +66,12 @@ calc_forest_age_class_duckdb(conn = conn,
 
 
 #4b /4d2 ----
+
 unique_eco_example <- read_unique_ecosystem_dt("inst/csv/Skeena_VRIBEM_LUT.csv")
-  vri_bem <- merge_unique_ecosystem_fields(vri_bem = vri_bem,
-                                         unique_ecosystem_dt = unique_eco_example)
+  
+merge_unique_ecosystem_fields_duckdb(conn,
+                                     vri_bem_tbl = "VRIBEM_CCB",
+                                     unique_ecosystem_dt = unique_eco_example)
 
 #4 d3 ----
 vri_bem <- find_crown_area_dominant_values(vri = vri_bem)
