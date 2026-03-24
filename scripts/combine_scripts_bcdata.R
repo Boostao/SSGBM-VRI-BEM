@@ -83,7 +83,9 @@ calc_hem_fields_duckdb(conn, vri_bem_tbl = "VRIBEM_CCB", fire_tbl = "V_FIRE")
 
 
 #5 ----
-export_dt <- create_RRM_ecosystem(vri_bem = vri_bem)
+
+export_dt <- create_RRM_ecosystem_duckdb(conn, vri_bem_tbl = "VRIBEM_CCB")
+
 fwrite(export_dt, file = "../RRM_input_table.csv")
 saveRDS(export_dt, file = "./data-raw/RRM_input_table.rds")
 
