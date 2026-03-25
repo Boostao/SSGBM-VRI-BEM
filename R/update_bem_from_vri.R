@@ -16,7 +16,6 @@
 #'
 #' @return sf object which contains adjusted map codes
 #' @import sf
-#' @import duckplyr
 #' @import dbplyr
 #' @import data.table
 #' @export

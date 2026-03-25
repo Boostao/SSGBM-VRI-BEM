@@ -16,6 +16,7 @@ Description: This package is for the VRI-BEM
 Imports: 
   data.table,
   dplyr,
+  duckdb,
   sf,
   terra, 
   units,

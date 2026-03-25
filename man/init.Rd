@@ -15,7 +15,7 @@
 \alias{init_conn}
 \title{Initialize a database}
 \usage{
-init_db(dbdir = defdb(), ask = interactive(), bem_dsn = NULL)
+init_db(dbdir = defdb(), ask = interactive(), bem_dsn = NULL, prem_dsn = NULL)
 
 init_vri(
   conn = init_conn(),

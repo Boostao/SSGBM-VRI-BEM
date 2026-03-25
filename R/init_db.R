@@ -17,7 +17,7 @@ init_db <- function(dbdir = defdb(),
                     prem_dsn = NULL) {
   conn <- init_conn(dbdir)
   init_vri(conn, ask = ask)
-  if (!is.null(bem_dsn) || duckdb::dbExistsTable(conn, "BEM")) {
+  if (!is.null(bem_dsn) || tbl_exists(conn, "BEM")) {
     init_bem(conn, ask = ask, dsn = bem_dsn)
   } else {
     logger::log_warn("No BEM data source name (dsn) provided. Skipping BEM initialization.")
@@ -31,6 +31,7 @@ init_db <- function(dbdir = defdb(),
   init_burn(conn, ask = ask)
   init_fire(conn, ask = ask)
   init_pem(conn, ask = ask, dsn = prem_dsn)
+  init_tsa(conn, ask = ask)
   duckdb::dbDisconnect(conn, shutdown = TRUE)
 }
 
@@ -64,7 +65,7 @@ init_vri <- function(conn = init_conn(),
   vri_record <- "2ebb35d8-c82f-4a17-9c96-612ac3532d55"
   vri_resources <- bcdata::bcdc_tidy_resources(vri_record)
 
-  if (duckdb::dbExistsTable(conn, "VRI")) {
+  if (tbl_exists(conn, "VRI")) {
     logger::log_info("VRI table already exists in database.")
     if (interactive() && ask) {
       answer <- readline("Re-initialize VRI table (deletes all data)? (y/n): ")
@@ -116,7 +117,7 @@ init_vri <- function(conn = init_conn(),
     "SPECIES_PCT_6" = "SPEC_PCT_6"
   )
 
-  vri_geom <- "%s Shape" |> sprintf(geom)
+  vri_geom <- "ST_GeomFromWKB(ST_AsWKB(%s)) Shape" |> sprintf(geom)
 
   if (is.null(dsn)) {
     dsn <- resolve_resource(vri_resources)
@@ -127,7 +128,7 @@ init_vri <- function(conn = init_conn(),
 
   if (layer_proj4 != target_proj4) {
     vri_geom <-
-      "ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)) Shape" |>
+      "ST_GeomFromWKB(ST_AsWKB(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)))) Shape" |>
       sprintf(geom, layer_proj4, target_proj4)
   }
 
@@ -165,7 +166,7 @@ init_bem <- function(conn = init_conn(),
                      dsn = NULL,
                      layer = "BEM",
                      geom = "geom") {
-  if (duckdb::dbExistsTable(conn, "BEM")) {
+  if (tbl_exists(conn, "BEM")) {
     logger::log_info("BEM table already exists in database.")
     if (interactive() && ask) {
       answer <- readline("Re-initialize BEM table (deletes all data)? (y/n): ")
@@ -183,7 +184,7 @@ init_bem <- function(conn = init_conn(),
   }
 
   # broad ecosystem mapping (BEM)
-  bem_geom <- "%s Shape" |> sprintf(geom)
+  bem_geom <- "ST_GeomFromWKB(ST_AsWKB(%s)) Shape" |> sprintf(geom)
 
   if (is.null(dsn)) {
     logger::log_error("No value for dsn to read `BEM` from.")
@@ -197,7 +198,7 @@ init_bem <- function(conn = init_conn(),
 
   if (layer_proj4 != target_proj4) {
     bem_geom <-
-      "ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)) Shape" |>
+      "ST_GeomFromWKB(ST_AsWKB(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)))) Shape" |>
       sprintf(geom, layer_proj4, target_proj4)
   }
 
@@ -242,13 +243,13 @@ init_bem <- function(conn = init_conn(),
 init_generic <- function(conn = init_conn(),
                          ask = interactive(),
                          dsn = NULL,
-                         layer,
+                         layer = NULL,
                          geom = "geom",
                          recordid,
                          filter1 = identity,
                          .include = c(),
                          tablename) {
-  if (duckdb::dbExistsTable(conn, tablename)) {
+  if (tbl_exists(conn, tablename)) {
     logger::log_info("%s table already exists in database." |>
                        sprintf(tablename))
     if (interactive() && ask) {
@@ -271,7 +272,7 @@ init_generic <- function(conn = init_conn(),
     }
   }
 
-  gen_geom <- "%s Shape" |> sprintf(geom)
+  gen_geom <- "ST_GeomFromWKB(ST_AsWKB(%s)) Shape" |> sprintf(geom)
 
   # If dsn is null read information from bcdata
   if (is.null(dsn)) {
@@ -290,9 +291,7 @@ init_generic <- function(conn = init_conn(),
 
     layer_proj4 <- meta_proj4(dsn[1], geom_f = geom)
     if (layer_proj4 != target_proj4) {
-      gen_geom <- "
-      ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)) Shape;
-      " |>
+      gen_geom <- "ST_GeomFromWKB(ST_AsWKB(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)))) Shape" |>
         sprintf(geom, layer_proj4, target_proj4)
     }
     query <- "SELECT %s FROM (%s)" |>
@@ -308,15 +307,22 @@ init_generic <- function(conn = init_conn(),
         )
       )
   } else {
-    layer_proj4 <- meta_proj4(dsn, layer = layer, geom_f = geom)
+    layer_proj4 <- if (!is.null(layer)) {
+      meta_proj4(dsn, layer = layer, geom_f = geom)
+    } else {
+      meta_proj4(dsn, geom_f = geom)
+    }
     if (layer_proj4 != target_proj4) {
-      gen_geom <- "
-      ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)) Shape
-      " |>
+      gen_geom <- "ST_GeomFromWKB(ST_AsWKB(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)))) Shape" |>
         sprintf(geom, layer_proj4, target_proj4)
     }
-    query <- "SELECT %s FROM ST_Read('%s', layer := '%s')" |>
-      sprintf(paste0(c(.include, gen_geom), collapse = ","), dsn, layer)
+    query <- if (!is.null(layer)) {
+      "SELECT %s FROM ST_Read('%s', layer := '%s')" |>
+        sprintf(paste0(c(.include, gen_geom), collapse = ","), dsn, layer)
+    } else {
+      "SELECT %s FROM ST_Read('%s')" |>
+        sprintf(paste0(c(.include, gen_geom), collapse = ","), dsn)
+    }
   }
 
   logger::log_info("Loading %s into duckdb database." |> sprintf(tablename))
@@ -497,7 +503,8 @@ init_fire <- function(conn = init_conn(),
 init_tsa <- function(conn = init_conn(),
                      ask = interactive(),
                      tsa_name = c(),
-                     Skeena_boundary = TRUE) {
+                     Skeena_boundary = TRUE,
+                     tsa_dsn = NULL) {
   filter1 <- identity
   if (length(tsa_name)) {
     filter1 <- \(x) {
@@ -507,6 +514,7 @@ init_tsa <- function(conn = init_conn(),
   init_generic(
     conn,
     ask,
+    dsn = tsa_dsn,
     recordid = "8daa29da-d7f4-401c-83ae-d962e3a28980",
     filter1 = filter1,
     .include = "TSA_NUMBER_DESCRIPTION",
@@ -795,6 +803,17 @@ collect_geojson <- function(x, ...) {
 #' @noRd
 defdb <- function() {
   file.path(cache_dir(), "ssgbm.duckdb")
+}
+
+#' @noRd
+tbl_exists <- function(conn, name) {
+  nrow(DBI::dbGetQuery(
+    conn,
+    sprintf(
+      "SELECT 1 FROM information_schema.tables WHERE table_name = '%s'",
+      name
+    )
+  )) > 0
 }
 
 #' @noRd
