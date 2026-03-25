@@ -18,7 +18,7 @@
 #' @importFrom terra `add<-` crs ext rast writeRaster res
 #' @importFrom sf st_layers gdal_utils
 #' @export
-rasterize_sf <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NULL, te = NULL, tr = NULL, reference = NULL,
+rasterize_sf_gdal <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NULL, te = NULL, tr = NULL, reference = NULL,
                          numeric_attributes = NULL, character_attributes = NULL, date_attributes = NULL, factor_conv_list = NULL,
                          burn = NULL, output_raster = FALSE, verbose = TRUE) {
 
@@ -147,8 +147,7 @@ rasterize_sf <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NU
            sf::gdal_utils(util = "rasterize",
                      source = src_datasource,
                      destination = paste0(dst_file_no_ext, "_",character_attributes[i],".", dst_file_extension),
-                     options = c("-a", character_attributes[i],
-                                 "-burn", "0",
+                     options = c("-burn", "0",
                                  "-a_srs", a_srs,
                                  "-te", te, # Bounding box 
                                  "-tr", tr, # resolution
@@ -269,7 +268,7 @@ rasterize_vri <- function(src_datasource, dst_filename, layer =  NULL, a_srs = N
                           character_attributes = c(paste0("BCLCS_LEVEL_", 1:5), paste0("SPECIES_CD_", 1:6), "LAND_COVER_CLASS_CD_1", "LINE_5_VEGETATION_COVER"),
                           date_attributes = "HARVEST_DATE",
                           burn = NULL, output_raster = FALSE, verbose = TRUE) {
-  rasterize_sf(src_datasource = src_datasource,
+  rasterize_sf_gdal(src_datasource = src_datasource,
                dst_filename = dst_filename,
                layer =  layer,
                a_srs = a_srs,
@@ -299,7 +298,7 @@ rasterize_wetlands <- function(src_datasource, dst_filename, layer =  NULL, a_sr
                           character_attributes = NULL,
                           date_attributes = NULL,
                           burn = "wl_pct", output_raster = FALSE, verbose = TRUE) {
-  rasterize_sf(src_datasource = src_datasource,
+  rasterize_sf_gdal(src_datasource = src_datasource,
                dst_filename = dst_filename,
                layer =  layer,
                a_srs = a_srs,
@@ -328,7 +327,7 @@ rasterize_rivers <- function(src_datasource, dst_filename, layer =  NULL, a_srs 
                                character_attributes = NULL,
                                date_attributes = NULL,
                                burn = "rivers", output_raster = FALSE, verbose = TRUE) {
-  rasterize_sf(src_datasource = src_datasource,
+  rasterize_sf_gdal(src_datasource = src_datasource,
                dst_filename = dst_filename,
                layer =  layer,
                a_srs = a_srs,
@@ -357,7 +356,7 @@ rasterize_ccb <- function(src_datasource, dst_filename, layer =  NULL, a_srs = N
                              character_attributes = NULL,
                              date_attributes = NULL,
                              burn = NULL, output_raster = FALSE, verbose = TRUE) {
-  rasterize_sf(src_datasource = src_datasource,
+  rasterize_sf_gdal(src_datasource = src_datasource,
                dst_filename = dst_filename,
                layer =  layer,
                a_srs = a_srs,
@@ -392,7 +391,7 @@ rasterize_bem <- function(src_datasource, dst_filename, layer =  NULL, a_srs = N
                                                    "COND_3", "VIAB_3", "FORESTED_3", "TREE_C3", "SHRUB_C3"),
                           date_attributes = NULL,
                           burn = NULL, output_raster = FALSE, verbose = TRUE) {
-  rasterize_sf(src_datasource = src_datasource,
+  rasterize_sf_gdal(src_datasource = src_datasource,
                dst_filename = dst_filename,
                layer =  layer,
                a_srs = a_srs,
