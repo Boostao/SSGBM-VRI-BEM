@@ -36,27 +36,13 @@
 #'
 calc_forest_age_class <- function(vri_bem, most_recent_harvest_year) {
 
-  if (FALSE) {
-    MRSRD_Y<-PROJ_AGE_1<-VRI_AGE_CL_STD<-VRI_AGE_CL_STS<-NULL
-  }
-
     # use data.table for fast data manipulation
-  #classes_vri <- attr(vri_bem, "class")
-  vriCRS <- st_crs(vri_bem)
+  classes_vri <- attr(vri_bem, "class")
   setDT(vri_bem)
 
   # if proj_age_1 is empty the year of harvest date and most_recent_harvest_year to compute the projected age
-  # Updated to incorporate Forest Disturbance Layer, where MRSRD_Y is the year of the most recent stand replacing disturbance
-  # Which includes burns (moderate and severe), logging, and pine beetle above 80% (see MRSRD_A)
-  # From Moose CEF team
-
-  #make sure PROJ_AGE is numeric
-  vri_bem[, PROJ_AGE_1 := as.numeric(PROJ_AGE_1)]
-
-  #make sure MRSRD_Y is numeric
-  vri_bem[, MRSRD_Y := as.numeric(MRSRD_Y)]
-
-  vri_bem[!is.na(MRSRD_Y), PROJ_AGE_1 := most_recent_harvest_year - MRSRD_Y]
+  # Harvest_Year comes from CCB and HARVEST_DATE comes from VRI
+  vri_bem[is.na(PROJ_AGE_1), PROJ_AGE_1 := most_recent_harvest_year - fcoalesce(as.integer(HARVESTYR),as.integer(format(as.Date(HRVSTDT, format = "%Y%m%d"), "%Y")))]
 
   # create variable for structural stage look up
   vri_bem[ , VRI_AGE_CL_STS := fcase(PROJ_AGE_1 < 0, -1,
@@ -71,8 +57,6 @@ calc_forest_age_class <- function(vri_bem, most_recent_harvest_year) {
                                      PROJ_AGE_1 > 249, 301,
                                      default = -1)]
 
-  vri_bem[, VRI_AGE_CL_STS := as.numeric(VRI_AGE_CL_STS)] #RW edit: make sure VRI_AGE_CL_STS is numeric
-
   # create variable for stand composition look up
   vri_bem[ , VRI_AGE_CL_STD := fcase(PROJ_AGE_1 < 0, -1,
                                      PROJ_AGE_1 <= 15, 15,
@@ -82,14 +66,10 @@ calc_forest_age_class <- function(vri_bem, most_recent_harvest_year) {
                                      PROJ_AGE_1 > 80, 9999,
                                      default = -1)]
 
-  vri_bem[, VRI_AGE_CL_STD := as.numeric(VRI_AGE_CL_STD)] #RW edit: make sure VRI_AGE_CL_STD is numeric
-
 
   # change object back to sf and return
-  #attr(vri_bem, "class") <- classes_vri
-  vri_bem <- vri_bem |> st_as_sf(sf_column_name="Shape",crs=vriCRS) |> st_make_valid()
+  attr(vri_bem, "class") <- classes_vri
 
   return(vri_bem)
 
 }
-

@@ -23,18 +23,25 @@
 #' @importFrom terra extract terrain `add<-` vect
 #' @export
 #'
-merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_threshold = 1500, terrain_raster = NULL) { #elevation threshold 1500 for moose
+merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_threshold, terrain_raster = NULL) {
 
-  if (FALSE) {
-    .<-aspect<-BEUMC_S1<-BEUMC_S2<-BEUMC_S3<-BGC_ZONE<-dem<-ID<-MEAN_ASP<-MEAN_SLOPE<-slope<-
-      SLOPE_MOD<-NULL
-  }
 
-  # TODO check if terra is able to compute this even when the raster is to big to me loaded in RAM at once
-  # Compute slope and aspect ----
+  vri_bem <- downscale_elevation(elev_raster = elev_raster,
+                                 vri_bem = vri_bem,
+                                 terrain_raster = terrain_raster)
 
+   vri_bem <- compute_elevation_ind_and_slope_mod(vri_bem,
+                                                  elevation_threshold = elevation_threshold)
+
+
+  return(st_as_sf(vri_bem))
+
+}
+
+
+downscale_elevation <- function(elev_raster, vri_bem, terrain_raster = NULL) {
   if (is.null(terrain_raster)) {
-    terrain_raster <- terra::terrain(elev_raster, v = c("slope", "aspect"), unit = "radians")
+    terrain_raster <- terrain(elev_raster, v = c("slope", "aspect"), unit = "radians")
   }
 
   # Combine elevation slope and aspect into one layered raster
@@ -45,51 +52,23 @@ merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_thresho
   # we excluded all points that had a slope of 0 when computing the mean aspect to avoid creating bias towards the default value when the slope is 0 (in rivers for example)
   # compute mean slope in pct (0 degree is 0% and 90 degree is 100%) by vri_bem
   # compute mean aspect using circular mean by vri_bem and converting to positive degrees ( to 360)
-  vg <- sf::st_geometry(vri_bem)
+  mean_raster_by_vri_bem <- setDT(extract(terrain_raster,
+                                          vect(vri_bem)))[, .(ELEV = mean(dem),
+                                                              MEAN_SLOPE = mean(slope, na.rm = T) * 57.29578/90,
+                                                              MEAN_ASP = ((atan2(sum(sin(aspect) * (slope > 0), na.rm = T)/sum(slope > 0, na.rm = T), sum(cos(aspect) * (slope > 0), na.rm = T)/sum(slope > 0 , na.rm = T)) * 57.29578) + 360) %% 360),
+                                                          by = .(vri_bem_index = as.integer(ID))]
 
-  felev <- function(i) {
-    constant1 <- 57.29578 / 90 * 100
-    data.table::setDT(
-      terra::extract(
-        terrain_raster,
-        terra::vect(vg[i]),
-      )
-    )[, .(
-      ELEV = mean(dem, na.rm = TRUE),
-      MEAN_SLOPE = mean(slope, na.rm = TRUE ) * constant1,
-      MEAN_ASP = {zslope <- slope > 0; zslope_sum <- sum(zslope, na.rm = T); (
-        (
-          atan2(
-            sum(sin(aspect) * zslope, na.rm = T)/zslope_sum,
-            sum(cos(aspect) * zslope, na.rm = T)/zslope_sum
-          ) * 57.29578
-        ) + 360) %% 360
-      }
-    ),
-      by = .(vri_bem_index = as.integer(ID))
-    ][, vri_bem_index := i]
-  }
-
-  if (Sys.info()[["sysname"]] == "Windows") {
-    mean_raster_by_vri_bem <- felev(seq_along(vg))
-  } else {
-    mc.cores <- getOption("mc.cores", parallel::detectCores())
-    grp <- split(seq_along(vg), ceiling(seq_along(vg)/(length(vg) %/% mc.cores + 1)))
-    mean_raster_by_vri_bem <- parallel::mclapply(grp, felev, mc.cores = mc.cores) |>
-      data.table::rbindlist(use.names = TRUE, fill = TRUE)
-  }
-
-  data.table::setDT(vri_bem)
+  setDT(vri_bem)
 
   # Merge info into VRI-BEM ----
   for (variable in c("ELEV", "MEAN_SLOPE", "MEAN_ASP")) {
     # remove variables if they already exist in vri_bem
     if (!is.null(vri_bem[[variable]])){
-      data.table::set(vri_bem, j = variable, value = NULL)
+      set(vri_bem, j = variable, value = NULL)
     }
 
     # Add variables to vri_bem
-    data.table::set(vri_bem, i = mean_raster_by_vri_bem[["vri_bem_index"]], j = variable, value = mean_raster_by_vri_bem[[variable]])
+    set(vri_bem, i = mean_raster_by_vri_bem[["vri_bem_index"]], j = variable, value = mean_raster_by_vri_bem[[variable]])
   }
 
   which_no_elev <- which(is.na(vri_bem[["ELEV"]]))
@@ -97,6 +76,10 @@ merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_thresho
     warning("could not calculate elevation for the following lines : ", paste(which_no_elev, collapse = ", "))
   }
 
+  return(vri_bem)
+}
+
+compute_elevation_ind_and_slope_mod <- function(vri_bem, elevation_threshold) {
   # Create elevation above threshold indicator ----
   if (!is.null(vri_bem[["ABOVE_ELEV_THOLD"]])){
     set(vri_bem, j = "ABOVE_ELEV_THOLD", value = NULL)
@@ -134,7 +117,6 @@ merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_thresho
 
                            default = NA_character_)]
 
-
-  return(sf::st_as_sf(vri_bem))
+  return(vri_bem)
 
 }
