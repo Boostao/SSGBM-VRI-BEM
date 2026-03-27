@@ -515,6 +515,7 @@ rasterize_sf_gdal_materialized <- function(src_datasource, dst_filename, layer =
     options = c(
       "-f", "GPKG",
       "-overwrite",
+      "-nlt", "PROMOTE_TO_MULTI",
       "-nln", temp_layer,
       "-dialect", "SQLite",
       "-sql", paste0("SELECT * FROM ", gdal_sql_identifier(layer))
@@ -589,9 +590,12 @@ rasterize_sf_gdal_materialized <- function(src_datasource, dst_filename, layer =
         )
       } else {
         options <- c("-burn", "0")
+        options <- gdal_append_rasterize_grid_options(options, a_srs, te, tr, temp_layer)
       }
 
-      options <- gdal_append_rasterize_grid_options(options, a_srs, te, tr)
+      if (nrow(factor_dt) > 0) {
+        options <- gdal_append_rasterize_grid_options(options, a_srs, te, tr)
+      }
 
       sf::gdal_utils(
         util = "rasterize",

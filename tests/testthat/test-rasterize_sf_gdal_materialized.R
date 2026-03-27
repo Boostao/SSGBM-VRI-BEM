@@ -44,3 +44,41 @@ test_that("rasterize_sf_gdal_materialized rasterizes numeric, character, date, a
   expect_equal(as.vector(terra::values(result[[3]])), c(20240101, 20240102))
   expect_equal(as.vector(terra::values(result[[4]])), c(1, 1))
 })
+
+test_that("rasterize_sf_gdal_materialized handles empty character lookup tables", {
+  skip_if_not_installed("sf")
+  skip_if_not_installed("terra")
+
+  geom <- sf::st_sfc(
+    sf::st_multipolygon(list(list(matrix(c(0, 0, 1, 0, 1, 1, 0, 1, 0, 0), ncol = 2, byrow = TRUE)))),
+    crs = 4326
+  )
+
+  source_sf <- sf::st_sf(
+    char_field = "A",
+    geometry = geom
+  )
+
+  source_file <- tempfile(fileext = ".gpkg")
+  output_file <- tempfile(fileext = ".tif")
+  sf::st_write(source_sf, source_file, layer = "src", quiet = TRUE)
+
+  conv_list <- list(
+    char_field = data.table::data.table(value = character(), factor = integer())
+  )
+
+  result <- rasterize_sf_gdal_materialized(
+    src_datasource = source_file,
+    dst_filename = output_file,
+    layer = "src",
+    character_attributes = "char_field",
+    factor_conv_list = conv_list,
+    te = c(0, 0, 1, 1),
+    tr = c(1, 1),
+    output_raster = TRUE,
+    verbose = FALSE
+  )
+
+  expect_identical(names(result), "char_field")
+  expect_equal(as.vector(terra::values(result[[1]])), 0)
+})
