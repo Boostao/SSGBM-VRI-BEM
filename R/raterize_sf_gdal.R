@@ -499,6 +499,8 @@ rasterize_sf_gdal_materialized <- function(src_datasource, dst_filename, layer =
 
   dst_filename_att <- character(0)
   layers_names <- character(0)
+  materialized_fields <- unique(c(numeric_attributes, character_attributes, date_attributes))
+  materialized_fields <- materialized_fields[!is.na(materialized_fields) & nzchar(materialized_fields)]
 
   temp_gpkg <- tempfile(pattern = "rasterize_sf_materialized_", fileext = ".gpkg")
   temp_layer <- paste0(gsub("[^A-Za-z0-9_]+", "_", basename(dst_file_no_ext)), "_src")
@@ -517,8 +519,8 @@ rasterize_sf_gdal_materialized <- function(src_datasource, dst_filename, layer =
       "-overwrite",
       "-nlt", "PROMOTE_TO_MULTI",
       "-nln", temp_layer,
-      "-dialect", "SQLite",
-      "-sql", paste0("SELECT * FROM ", gdal_sql_identifier(layer))
+      if (length(materialized_fields) > 0) c("-select", paste(materialized_fields, collapse = ",")) else NULL,
+      layer
     )
   )
 
