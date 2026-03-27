@@ -93,7 +93,8 @@ init_tsa(
   conn = init_conn(),
   ask = interactive(),
   tsa_name = c(),
-  Skeena_boundary = TRUE
+  Skeena_boundary = TRUE,
+  tsa_dsn = NULL
 )
 
 init_conn(dbdir = defdb())
