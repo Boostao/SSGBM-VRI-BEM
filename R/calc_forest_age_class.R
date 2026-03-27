@@ -41,8 +41,18 @@ calc_forest_age_class <- function(vri_bem, most_recent_harvest_year) {
   setDT(vri_bem)
 
   # if proj_age_1 is empty the year of harvest date and most_recent_harvest_year to compute the projected age
-  # Harvest_Year comes from CCB and HARVEST_DATE comes from VRI
-  vri_bem[is.na(PROJ_AGE_1), PROJ_AGE_1 := most_recent_harvest_year - fcoalesce(as.integer(HARVESTYR),as.integer(format(as.Date(HRVSTDT, format = "%Y%m%d"), "%Y")))]
+  # Updated to incorporate Forest Disturbance Layer, where MRSRD_Y is the year of the most recent stand replacing disturbance
+  # Which includes burns (moderate and severe), logging, and pine beetle above 80% (see MRSRD_A)
+  # From Moose CEF team
+
+  #make sure PROJ_AGE is numeric
+  vri_bem[, PROJ_AGE_1 := as.numeric(PROJ_AGE_1)]
+
+  #make sure MRSRD_Y is numeric
+  vri_bem[, MRSRD_Y := fcoalesce(as.integer(HARVESTYR),as.integer(format(as.Date(HRVSTDT, format = "%Y%m%d"), "%Y")))] #TMP FIX
+  vri_bem[, MRSRD_Y := as.numeric(MRSRD_Y)]
+
+  vri_bem[!is.na(MRSRD_Y), PROJ_AGE_1 := most_recent_harvest_year - MRSRD_Y]
 
   # create variable for structural stage look up
   vri_bem[ , VRI_AGE_CL_STS := fcase(PROJ_AGE_1 < 0, -1,
@@ -57,6 +67,8 @@ calc_forest_age_class <- function(vri_bem, most_recent_harvest_year) {
                                      PROJ_AGE_1 > 249, 301,
                                      default = -1)]
 
+  vri_bem[, VRI_AGE_CL_STS := as.numeric(VRI_AGE_CL_STS)]
+
   # create variable for stand composition look up
   vri_bem[ , VRI_AGE_CL_STD := fcase(PROJ_AGE_1 < 0, -1,
                                      PROJ_AGE_1 <= 15, 15,
@@ -66,6 +78,7 @@ calc_forest_age_class <- function(vri_bem, most_recent_harvest_year) {
                                      PROJ_AGE_1 > 80, 9999,
                                      default = -1)]
 
+  vri_bem[, VRI_AGE_CL_STD := as.numeric(VRI_AGE_CL_STD)]
 
   # change object back to sf and return
   attr(vri_bem, "class") <- classes_vri

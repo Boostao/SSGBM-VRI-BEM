@@ -171,7 +171,7 @@ correct_bem_from_vri <- function(vri_bem, beu_bec, clear_site_ma = TRUE, use_ife
   which_WL <- which(is.na(vri_bem[["SMPL_TYPE"]]) & vri_bem[["BCLCS_LV_1"]] == "V" & vri_bem[["BCLCS_LV_2"]] == "N"
                     & vri_bem[["BCLCS_LV_3"]] == "W" & vri_bem[["AGE_CL_STS"]] == -1 & !vri_bem[["row_updated"]])
 
-  vri_bem[(which_RI), `:=`(SDEC_1 = 10,
+  vri_bem[(which_WL), `:=`(SDEC_1 = 10,
                            BEUMC_S1 = "WL",
                            lbl_edit = "Updated to 10 WL because BCLCS_LV_1/2/3 = 'V'/'N'/'W' and AGE_CL_STS = -1",
                            row_updated = TRUE,
