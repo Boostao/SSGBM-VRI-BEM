@@ -1,3 +1,6 @@
+source(file.path("..", "..", "R", "terra_rrm_pipeline.R"))
+source(file.path("..", "..", "R", "raterize_sf_gdal.R"))
+
 test_that("rasterize_sf_gdal_materialized rasterizes numeric, character, date, and burn fields", {
   skip_if_not_installed("sf")
   skip_if_not_installed("terra")
@@ -43,6 +46,15 @@ test_that("rasterize_sf_gdal_materialized rasterizes numeric, character, date, a
   expect_equal(as.vector(terra::values(result[[2]])), c(1, 2))
   expect_equal(as.vector(terra::values(result[[3]])), c(20240101, 20240102))
   expect_equal(as.vector(terra::values(result[[4]])), c(1, 1))
+
+  char_levels <- terra::cats(result[["char_field"]])[[1]]
+  expect_equal(char_levels[[1]], c(1L, 2L))
+  expect_equal(char_levels[[2]], c("A", "B"))
+
+  roundtrip <- terra::rast(output_file)
+  roundtrip_levels <- terra::cats(roundtrip[["char_field"]])[[1]]
+  expect_equal(roundtrip_levels[[1]], c(1L, 2L))
+  expect_equal(roundtrip_levels[[2]], c("A", "B"))
 })
 
 test_that("rasterize_sf_gdal_materialized handles empty character lookup tables", {

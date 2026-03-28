@@ -5,6 +5,6 @@
 #' @import data.table
 #' @export
 read_unique_ecosystem_dt <- function(file) {
-  unique_ecosystem_dt <- fread(file)
+  unique_ecosystem_dt <- data.table::fread(file)
   return(format_unique_ecosystem_dt(unique_ecosystem_dt))
 }

@@ -223,10 +223,10 @@ rasterize_sf_gdal <- function(src_datasource, dst_filename, layer =  NULL, a_srs
   if (verbose) {
     message("Combining all raster layers into one file")
   }
-  total_raster <- rast(dst_filename_att[1])
+  total_raster <- terra::rast(dst_filename_att[1])
   if (length(dst_filename_att) > 1) {
     for (i in 2:length(dst_filename_att)) {
-      add(total_raster) <- rast(dst_filename_att[i])
+      total_raster <- c(total_raster, terra::rast(dst_filename_att[i]))
     }
   }
 
@@ -245,7 +245,7 @@ rasterize_sf_gdal <- function(src_datasource, dst_filename, layer =  NULL, a_srs
   lapply(dst_filename_att, unlink)
 
   if (output_raster) {
-    return(rast(dst_filename))
+    return(terra::rast(dst_filename))
   }
   else {
     return(NULL)
@@ -426,19 +426,23 @@ gdal_append_rasterize_grid_options <- function(options, a_srs, te, tr, layer = N
   options
 }
 
-combine_materialized_rasters <- function(dst_filename_att, layers_names, dst_filename, output_raster, verbose) {
+combine_materialized_rasters <- function(dst_filename_att, layers_names, dst_filename, output_raster, verbose, factor_conv_list = NULL) {
   if (verbose) {
     message("Combining all raster layers into one file")
   }
 
-  total_raster <- rast(dst_filename_att[1])
+  total_raster <- terra::rast(dst_filename_att[1])
   if (length(dst_filename_att) > 1) {
     for (i in 2:length(dst_filename_att)) {
-      add(total_raster) <- rast(dst_filename_att[i])
+      terra::add(total_raster) <- terra::rast(dst_filename_att[i])
     }
   }
 
   names(total_raster) <- layers_names
+
+  if (!is.null(factor_conv_list)) {
+    total_raster <- set_raster_levels_from_conv(total_raster, factor_conv_list)
+  }
 
   if (verbose) {
     message(paste0("Writing new raster file at ", dst_filename))
@@ -451,7 +455,7 @@ combine_materialized_rasters <- function(dst_filename_att, layers_names, dst_fil
   lapply(dst_filename_att, unlink)
 
   if (output_raster) {
-    return(rast(dst_filename))
+    return(terra::rast(dst_filename))
   }
 
   return(NULL)
@@ -478,15 +482,15 @@ rasterize_sf_gdal_materialized <- function(src_datasource, dst_filename, layer =
 
   if (!is.null(reference)) {
     if (inherits(reference, "character")) {
-      ref_raster <- rast(reference)
+      ref_raster <- terra::rast(reference)
     } else {
       ref_raster <- reference
     }
 
-    a_srs <- crs(ref_raster, proj = TRUE)
-    extent <- ext(ref_raster)
+    a_srs <- terra::crs(ref_raster, proj = TRUE)
+    extent <- terra::ext(ref_raster)
     te <- c(extent[1], extent[3], extent[2], extent[4])
-    tr <- res(ref_raster)
+    tr <- terra::res(ref_raster)
   }
 
   if (is.null(layer)) {
@@ -675,7 +679,14 @@ rasterize_sf_gdal_materialized <- function(src_datasource, dst_filename, layer =
     return(NULL)
   }
 
-  combine_materialized_rasters(dst_filename_att, layers_names, dst_filename, output_raster, verbose)
+  combine_materialized_rasters(
+    dst_filename_att = dst_filename_att,
+    layers_names = layers_names,
+    dst_filename = dst_filename,
+    output_raster = output_raster,
+    verbose = verbose,
+    factor_conv_list = factor_conv_list
+  )
 }
 
 #' Convert vri to raster using materialized on-disk coded fields
