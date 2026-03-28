@@ -60,6 +60,7 @@ merge_crown <- function(vri, bem, intersection_dt = NULL) {
   # merge the crown moose on vri
   match_lines <- match(vri[["TEIS_ID"]],  bem$TEIS_ID[most_covered_moose_by_bem[["bem_index"]]])
   set(vri, j = paste0("CROWN_MOOSE_", 1:3), value = most_covered_moose_by_bem[["V1"]][match_lines])
+  set(vri, j = paste0("CROWN_ALL_", 1:3), value = most_covered_moose_by_bem[["V1"]][match_lines])
 
   return(vri)
 }
@@ -72,12 +73,14 @@ correct_crown <- function(vri_bem, raster = FALSE) {
   if (raster) {
     set(vri_bem, j = paste0("CROWN_BEAR_", 1:3), value = vri_bem[["CROWN_ALL"]])
     set(vri_bem, j = paste0("CROWN_MOOSE_", 1:3), value = vri_bem[["CROWN_ALL"]])
+    set(vri_bem, j = paste0("CROWN_ALL_", 1:3), value = vri_bem[["CROWN_ALL"]])
   }
 
   # blank Crown moose and crown moose if not ecounter specific condition
   for (i in 1:3) {
-    set(vri_bem, i = which(!(vri_bem[[paste0("FORESTED_", i)]] == "Y" & substr(vri_bem[[paste0("STRCT_S", i)]], start = 1, stop = 1) %in% c("4", "5", "6", "7"))), j = paste0("CROWN_BEAR_", i) , value = NA)
-    set(vri_bem, i = which(!(vri_bem[[paste0("FORESTED_", i)]] == "Y" & substr(vri_bem[[paste0("STRCT_S", i)]], start = 1, stop = 1) %in% c("4", "5", "6", "7"))), j = paste0("CROWN_MOOSE_", i), value = NA)
+    set(vri_bem, i = which(!(vri_bem[[paste0("FORESTED_", i)]] == "Y" & substr(vri_bem[[paste0("STRCT_S", i)]], start = 1, stop = 1) %in% c("4", "5", "6", "7","7a","7b"))), j = paste0("CROWN_BEAR_", i) , value = NA)
+    set(vri_bem, i = which(!(vri_bem[[paste0("FORESTED_", i)]] == "Y" & substr(vri_bem[[paste0("STRCT_S", i)]], start = 1, stop = 1) %in% c("4", "5", "6", "7","7a","7b"))), j = paste0("CROWN_MOOSE_", i), value = NA)
+    set(vri_bem, i = which(!(vri_bem[[paste0("FORESTED_", i)]] == "Y" & substr(vri_bem[[paste0("STRCT_S", i)]], start = 1, stop = 1) %in% c("4", "5", "6", "7","7a","7b"))), j = paste0("CROWN_ALL_", i), value = NA)
   }
 
   return(vri_bem)

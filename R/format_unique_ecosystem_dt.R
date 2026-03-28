@@ -13,9 +13,9 @@ format_unique_ecosystem_dt <- function(unique_ecosystem_dt) {
   }
 
   #default to NAs for missing data
-  #unique_ecosystem_dt[BGC_VRT == "" | BGC_VRT == 0, BGC_VRT := NA_character_]
-  #unique_ecosystem_dt[ , BGC_VRT := as.character(BGC_VRT)]
-  unique_ecosystem_dt[is.na(BGC_VRT), BGC_VRT := 0]
+  #unique_ecosystem_dt[BGC_VRT == "" | BGC_VRT == 0, BGC_VRT := NA_character_] TMP FIX
+  #unique_ecosystem_dt[ , BGC_VRT := as.character(BGC_VRT)] TMP FIX
+  unique_ecosystem_dt[ BGC_VRT == 0, BGC_VRT := NA_character_] #TMP FIX
   unique_ecosystem_dt[BGC_PHASE == "", BGC_PHASE := NA_character_]
 
 }
