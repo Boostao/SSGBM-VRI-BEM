@@ -97,7 +97,7 @@ run_and_fetch <- function(conn, tbl_name, rasters,
     terrain_raster     = rasters$terrain,
     result_tbl         = result_tbl
   )
-  DBI::dbGetQuery(conn, sprintf("SELECT * FROM %s", result_tbl))
+  DBI::dbGetQuery(conn, sprintf("SELECT * EXCLUDE (Shape) FROM %s", result_tbl))
 }
 
 # ---------------------------------------------------------------------------
@@ -323,7 +323,10 @@ test_that("result table exists in DuckDB after function call", {
   )
 
   expect_equal(returned_name, out_tbl)
-  expect_true(DBI::dbExistsTable(conn, out_tbl))
+  expect_true(DBI::dbGetQuery(conn, sprintf(
+    "SELECT count(*) > 0 AS found FROM duckdb_tables() WHERE table_name = '%s'",
+    out_tbl
+  ))$found)
   DBI::dbDisconnect(conn, shutdown = TRUE)
 })
 

@@ -93,12 +93,12 @@ merge_geometry_duckdb <- function(conn,
   #    lists where y columns are NULLed out for non-overlap rows.
   # ------------------------------------------------------------------
   x_cols <- DBI::dbGetQuery(
-    conn, sprintf("SELECT * FROM %s LIMIT 0", x_tbl)
-  ) |> names()
+    conn, sprintf("PRAGMA table_info('%s')", x_tbl)
+  )$name
 
   y_cols <- DBI::dbGetQuery(
-    conn, sprintf("SELECT * FROM %s LIMIT 0", y_tbl)
-  ) |> names()
+    conn, sprintf("PRAGMA table_info('%s')", y_tbl)
+  )$name
 
   x_non_geom <- x_cols[x_cols != "Shape"]
   y_non_geom <- y_cols[y_cols != "Shape"]
@@ -114,8 +114,11 @@ merge_geometry_duckdb <- function(conn,
   # 2. Build SELECT column expressions for each intermediate step
   # ------------------------------------------------------------------
 
-  # intersect_raw: x cols + y cols + raw (not yet sanitized) intersection
+  # intersect_raw: x_rowid (for union aggregation) + x cols + y cols + raw intersection
+  # x_rowid is stored here so step 4c can aggregate the y_union directly from this
+  # table instead of re-running the expensive ST_Intersects spatial join.
   intersect_raw_select <- indented(c(
+    "v.rowid AS x_rowid",
     sprintf("v.%s", qi(x_non_geom)),
     if (length(new_y_cols) > 0L) sprintf("y.%s", qi(new_y_cols)),
     "ST_Intersection(ST_MakeValid(v.Shape), ST_MakeValid(y.Shape)) AS Shape"
@@ -126,7 +129,7 @@ merge_geometry_duckdb <- function(conn,
     sprintf("v.%s", qi(x_non_geom)),
     if (length(new_y_cols) > 0L) sprintf("NULL AS %s", qi(new_y_cols))
   )
-
+ 
   # diff_raw: + raw (not yet sanitized) difference geometry
   diff_raw_select <- indented(c(
     null_y_exprs,
@@ -148,14 +151,13 @@ merge_geometry_duckdb <- function(conn,
   tmp_intersect_raw <- paste0(pfx, "iraw")
   tmp_intersect_san <- paste0(pfx, "isan")
   tmp_unioned       <- paste0(pfx, "union")
-  tmp_diff_raw      <- paste0(pfx, "draw")
   tmp_diff_san      <- paste0(pfx, "dsan")
   tmp_no_overlap    <- paste0(pfx, "noovlp")
 
   on.exit({
     for (t in c(tmp_intersect_raw, tmp_intersect_san, tmp_unioned,
-                tmp_diff_raw, tmp_diff_san, tmp_no_overlap)) {
-      try(duckdb::dbSendQuery(conn, sprintf("DROP TABLE IF EXISTS %s", t)), silent = TRUE)
+                tmp_diff_san, tmp_no_overlap)) {
+      try(DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", t)), silent = TRUE)
     }
   }, add = TRUE)
 
@@ -164,7 +166,8 @@ merge_geometry_duckdb <- function(conn,
   # ------------------------------------------------------------------
 
   # 4a. One raw row per (x, y) overlapping pair
-  duckdb::dbSendQuery(conn, sprintf(
+  logger::log_info("Computing raw intersections of overlapping x and y polygons")
+  DBI::dbExecute(conn, sprintf(
     "CREATE OR REPLACE TEMP TABLE %s AS
       SELECT %s
       FROM %s v
@@ -174,43 +177,59 @@ merge_geometry_duckdb <- function(conn,
   ))
 
   # 4b. Sanitize: collection-extract to polygons only + area filter
+   logger::log_info("Sanitizing intersected geometries: collection-extract to polygons only + area filter")
   sanitize_geometry_duckdb(conn, tmp_intersect_raw, tmp_intersect_san, tolerance_m2)
 
-  # 4c. Per-x union of all overlapping y polygons (feeds the difference step)
-  duckdb::dbSendQuery(conn, sprintf(
+  # 4c. Per-x union of intersection geometries (feeds the difference step)
+  # Reuses tmp_intersect_raw instead of re-running ST_Intersects — saves one
+  # full spatial index scan.  Union of intersections ≡ union of original y
+  # shapes for the purpose of ST_Difference(x, union) because the only
+  # relevant part of any y polygon is the part that overlaps x.
+  logger::log_info("Computing per-x union from intersection geometries (no spatial re-scan)")
+  DBI::dbExecute(conn, sprintf(
     "CREATE OR REPLACE TEMP TABLE %s AS
-      SELECT
-        v.rowid AS x_rowid,
-        ST_Union_Agg(ST_MakeValid(y.Shape)) AS y_union
-      FROM %s v
-      JOIN %s y ON ST_Intersects(v.Shape, y.Shape)
-      GROUP BY v.rowid",
-    tmp_unioned, x_tbl, y_tbl
+      SELECT x_rowid, ST_Union_Agg(ST_MakeValid(Shape)) AS y_union
+      FROM %s
+      GROUP BY x_rowid",
+    tmp_unioned, tmp_intersect_raw
   ))
 
-  # 4d. Raw x remainder (x poly minus its overlapping y union)
-  duckdb::dbSendQuery(conn, sprintf(
+  # 4d+4e. x remainder (x minus overlapping y union) + inline sanitize
+  # Combining the difference computation and the collection-extract/area filter
+  # into one query avoids writing and reading back an intermediate table.
+  logger::log_info("Computing x remainder (x poly minus its overlapping y union) + sanitizing")
+  DBI::dbExecute(conn, sprintf(
     "CREATE OR REPLACE TEMP TABLE %s AS
-      SELECT %s
-      FROM %s v
-      JOIN %s u ON v.rowid = u.x_rowid",
-    tmp_diff_raw, diff_raw_select, x_tbl, tmp_unioned
+      SELECT * FROM (
+        SELECT * EXCLUDE (Shape),
+               ST_CollectionExtract(ST_MakeValid(Shape), 3) AS Shape
+        FROM (
+          SELECT %s
+          FROM %s v
+          JOIN %s u ON v.rowid = u.x_rowid
+        ) raw_diff
+      ) san_diff
+      WHERE NOT ST_IsEmpty(Shape) AND ST_Area(Shape) > %s",
+    tmp_diff_san, diff_raw_select, x_tbl, tmp_unioned, as.numeric(tolerance_m2)
   ))
-
-  # 4e. Sanitize: collection-extract to polygons only + area filter
-  sanitize_geometry_duckdb(conn, tmp_diff_raw, tmp_diff_san, tolerance_m2)
 
   # 4f. x polygons with no y overlap at all (pass through unchanged)
-  duckdb::dbSendQuery(conn, sprintf(
+  # LEFT JOIN anti-join is cheaper than NOT IN (...) for large tables because
+  # it avoids building a full hash set and handles NULL rowids correctly.
+  logger::log_info("Finding non-overlapping x polygons")
+  DBI::dbExecute(conn, sprintf(
     "CREATE OR REPLACE TEMP TABLE %s AS
       SELECT %s
       FROM %s v
-      WHERE v.rowid NOT IN (SELECT x_rowid FROM %s)",
+      LEFT JOIN %s u ON v.rowid = u.x_rowid
+      WHERE u.x_rowid IS NULL",
     tmp_no_overlap, no_overlap_select, x_tbl, tmp_unioned
   ))
 
   # 4g. UNION ALL three parts into the final result table
-  duckdb::dbSendQuery(conn, sprintf(
+  logger::log_info("UNION ALL three parts into the final result table")
+
+  DBI::dbExecute(conn, sprintf(
     "CREATE OR REPLACE TEMP TABLE %s AS
       SELECT %s FROM %s
       UNION ALL
@@ -223,7 +242,7 @@ merge_geometry_duckdb <- function(conn,
     final_select_sql, tmp_no_overlap
   ))
 
-  logger::log_info("Created table %s with geometry union-split results.", result_tbl)
+  logger::log_info("Created table {result_tbl} with geometry union-split results.")
 
   invisible(result_tbl)
 }

@@ -294,14 +294,69 @@ parmapply <- function() {
 }
 
 #'  Create the filtered views from the source table for the analysis
-#'  
+#'
 #' @param conn A database connection.
 #' @param wkt_filter A well-known text geometry of the area of interest.
 #' @param tables A character vector of tables to create views from.
+#' @param materialize Logical (default `TRUE`). When `TRUE` each filtered
+#'   result is written to a temporary **table** with an RTREE spatial index
+#'   instead of a view. Materialization requires a one-time scan of each base
+#'   table but every subsequent spatial join — VRI×BEM intersection, wetland
+#'   area aggregation, fire polygon overlay, CCB union-split, etc. — can
+#'   exploit the index rather than re-evaluating the AOI filter on each access.
+#'   Set to `FALSE` to restore the original view-only behaviour.
 #' @export
-filtered_views <- function(conn = init_conn(), wkt_filter, tables = c("BEM","BURN","CCB","FIRE","GLACIERS","LAKES","RIVERS","VRI","WETLANDS")) {
-  duckdb::dbSendQuery(conn, "SET VARIABLE AOI = (SELECT ST_GeomFromText('%s'));" |> sprintf(wkt_filter))
+filtered_views <- function(conn = init_conn(), wkt_filter,
+                           tables = c("BEM","BURN","CCB","FIRE","GLACIERS","LAKES","RIVERS","VRI","WETLANDS"),
+                           materialize = TRUE) {
+  t0_total <- proc.time()[["elapsed"]]
+  logger::log_info("filtered_views: starting ({length(tables)} tables, materialize={materialize})")
+
+  DBI::dbExecute(conn, sprintf("SET VARIABLE AOI = (SELECT ST_GeomFromText('%s'));", wkt_filter))
+  # Inline the WKT literal for CREATE TABLE so the DuckDB query planner can
+  # extract a bbox from the constant geometry and use any RTREE index on the
+  # source table.  getvariable() is opaque to the planner; a literal is not.
+  aoi_literal <- sprintf("ST_GeomFromText('%s')", wkt_filter)
+
   for (t in tables) {
-    duckdb::dbSendQuery(conn, "CREATE OR REPLACE TEMP VIEW V_%s AS (SELECT * FROM %s WHERE ST_Intersects(Shape, getVariable('AOI')));" |> sprintf(t, t))
+    t0 <- proc.time()[["elapsed"]]
+    v_name <- sprintf("V_%s", t)
+
+    # Skip if the source table does not exist in this database
+    exists_rows <- DBI::dbGetQuery(conn,
+      sprintf("SELECT count(*) AS n FROM information_schema.tables WHERE table_name = '%s';", t))
+    if (exists_rows$n == 0L) {
+      logger::log_info("filtered_views: skipping {t} (not found in database)")
+      next
+    }
+
+    if (materialize) {
+      # CREATE OR REPLACE handles the re-run case (existing TABLE) without
+      # needing separate DROP statements.  We avoid "DROP VIEW IF EXISTS" on a
+      # TABLE entirely — DuckDB 1.5 raises a Catalog error for that even with
+      # IF EXISTS.  If an old VIEW (materialize=FALSE run) exists with this
+      # name, silently drop it first via try().
+      try(DBI::dbExecute(conn, sprintf("DROP VIEW IF EXISTS %s;", v_name)), silent = TRUE)
+      DBI::dbExecute(conn, sprintf(
+        "CREATE OR REPLACE TEMP TABLE %s AS (SELECT * FROM %s WHERE Shape && %s);",
+        v_name, t, aoi_literal
+      ))
+      n_rows <- DBI::dbGetQuery(conn, sprintf("SELECT count(*) AS n FROM %s;", v_name))$n
+      # The table was just (re-)created so there are no existing indexes on it;
+      # plain CREATE INDEX (no IF NOT EXISTS) is correct here.
+      DBI::dbExecute(conn, sprintf(
+        "CREATE INDEX %s_rtree ON %s USING RTREE (Shape);",
+        v_name, v_name
+      ))
+      logger::log_info("filtered_views: {t} -> {v_name} materialized ({n_rows} rows, {round(proc.time()[['elapsed']] - t0, 1)}s)")
+    } else {
+      DBI::dbExecute(conn, sprintf(
+        "CREATE OR REPLACE TEMP VIEW %s AS (SELECT * FROM %s WHERE Shape && getvariable('AOI'));",
+        v_name, t
+      ))
+      logger::log_info("filtered_views: {t} -> {v_name} view created ({round(proc.time()[['elapsed']] - t0, 1)}s)")
+    }
   }
+
+  logger::log_info("filtered_views: done (total {round(proc.time()[['elapsed']] - t0_total, 1)}s)")
 }

@@ -74,9 +74,9 @@ calc_forest_age_class_duckdb <- function(conn,
   ))
 
   # ── 3. Override PROJ_AGE_1 from MRSRD_Y where the column is present ──────
-  existing_cols <- toupper(names(DBI::dbGetQuery(
-    conn, sprintf("SELECT * FROM %s LIMIT 0", vri_bem_tbl)
-  )))
+  existing_cols <- toupper(DBI::dbGetQuery(
+    conn, sprintf("PRAGMA table_info('%s')", vri_bem_tbl)
+  )$name)
 
   if ("MRSRD_Y" %in% existing_cols && !is.null(mrhy) && !is.na(mrhy)) {
     DBI::dbExecute(conn, sprintf(

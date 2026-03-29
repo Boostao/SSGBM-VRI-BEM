@@ -93,7 +93,7 @@ test_that("all 24 output columns are added to the table", {
   make_fire_tbl(conn)
   run_hem(conn)
 
-  cols <- names(DBI::dbGetQuery(conn, "SELECT * FROM VRIBEM_TEST LIMIT 0"))
+  cols <- DBI::dbGetQuery(conn, "PRAGMA table_info('VRIBEM_TEST')")$name
   expected <- c(
     "fire_pct",
     "Static_Wetland_ST", "Static_Wetland_SL", "Static_Wetland_HE",

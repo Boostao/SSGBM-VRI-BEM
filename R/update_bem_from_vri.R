@@ -22,7 +22,7 @@
 
 update_bem_from_vri <- function(conn, beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE) {
 
-  vribem_columns <- duckdb::dbListFields(conn, "V_VRIBEM")
+  vribem_columns <- DBI::dbGetQuery(conn, "PRAGMA table_info('V_VRIBEM')")$name
   
   vri_bem <- tbl(conn, "V_VRIBEM") |> as_duckdb_tibble(prudence = "stingy")
 

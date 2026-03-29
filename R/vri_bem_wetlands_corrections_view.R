@@ -17,9 +17,39 @@ vri_bem_wetlands_corrections_view <- function(conn, vri_bem = "VRIBEM_CORRECTION
                                                  "MEAN_SLOPE", "BCLCS_LV_4"))
   
   # output table name
-  tbl_name <- "VRIBEM_WETLANDS_CORRECTIONS" 
-  
-  duckdb::dbSendQuery(conn, sprintf("
+  tbl_name <- "VRIBEM_WETLANDS_CORRECTIONS"
+
+  # Ensure the wetlands source is materialized with an RTREE index so the
+  # spatial aggregation below can use the index.  If `filtered_views()` was
+  # called with `materialize = TRUE` (default), V_WETLANDS is already an
+  # indexed table and we use it as-is.  Otherwise we materialize it here.
+  wl_src <- wetlands
+  tmp_wetlands <- "_tmp_wc_wetlands"
+  wl_is_view <- tryCatch(
+    {
+      DBI::dbGetQuery(conn, sprintf("SELECT * FROM duckdb_views() WHERE view_name = '%s'", wetlands))$view_name
+    },
+    error = function(e) character(0L)
+  )
+  if (length(wl_is_view) > 0L && wl_is_view == wetlands) {
+    # Source is a view: materialise + index it once for this call
+    DBI::dbExecute(conn, sprintf(
+      "CREATE OR REPLACE TEMP TABLE %s AS SELECT * FROM %s",
+      tmp_wetlands, wetlands
+    ))
+    DBI::dbExecute(conn, sprintf(
+      "CREATE INDEX %s_rtree ON %s USING RTREE (Shape)",
+      tmp_wetlands, tmp_wetlands
+    ))
+    wl_src <- tmp_wetlands
+    on.exit(
+      try(DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", tmp_wetlands)),
+          silent = TRUE),
+      add = TRUE
+    )
+  }
+
+  DBI::dbExecute(conn, sprintf("
     CREATE OR REPLACE TEMP TABLE %s AS (
       WITH vri_bem AS (SELECT *, ROW_NUMBER() OVER (ORDER BY TEIS_ID, FEATURE_ID) AS row_id FROM %s)           
       SELECT vri_bem.*, 
@@ -35,7 +65,7 @@ vri_bem_wetlands_corrections_view <- function(conn, vri_bem = "VRIBEM_CORRECTION
       ) wl
       JOIN vri_bem
         ON wl.row_id = vri_bem.row_id
-  );", tbl_name, vri_bem, wetlands))
+  );", tbl_name, vri_bem, wl_src))
 
   add_col_to_tbl(conn, tbl_name = tbl_name, col = "Lbl_edit_wl", type = "VARCHAR DEFAULT ''")
   add_col_to_tbl(conn, tbl_name = tbl_name, col = "SMPL_TYPE", type = "VARCHAR DEFAULT ''")
@@ -109,7 +139,7 @@ vri_bem_wetlands_corrections_view <- function(conn, vri_bem = "VRIBEM_CORRECTION
   add_col_to_tbl(conn, tbl_name = tbl_name, col = "new_beu_code", type = "INTEGER")
 
   # Allowed BEU codes adjustments (line 364) -----
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
     UPDATE %s as vri_bem
     SET
       new_beu_code = CASE 
@@ -338,7 +368,7 @@ vri_bem_wetlands_corrections_view <- function(conn, vri_bem = "VRIBEM_CORRECTION
   DBI::dbWriteTable(conn, "riparian_mapcode", riparian_mapcode, overwrite = TRUE, temporary = TRUE)
   add_col_to_tbl(conn, tbl_name = tbl_name, col = "riparian_adj_ind", type = "BOOLEAN DEFAULT FALSE")
 
-  duckdb::dbSendQuery(conn, paste0("
+  DBI::dbExecute(conn, paste0("
      UPDATE ", tbl_name, " vri_bem
      SET 
        SDEC_1 = 10, 

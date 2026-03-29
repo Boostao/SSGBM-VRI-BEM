@@ -1,10 +1,21 @@
 
+library(duckdb)
+system.time({
 devtools::load_all()
 
 aoi_wkt <- "MULTIPOLYGON (((1065018 932215.1, 941827.7 932215.1, 941827.7 1016988, 1065018 1016988, 1065018 932215.1)))"
 #terra::vect(aoi_wkt, crs = "EPSG:3005") |> terra::plet()
 
-conn <- init_conn()
+conn <- init_conn(temp_dir = "./duckdb_tmp")  # temp_dir set at connection time before any queries run
+
+# Tune DuckDB: use all logical cores and cap memory to leave headroom for R/terra
+# Adjust memory_limit to ~70 % of available RAM for large AOIs
+local({
+  n <- parallel::detectCores()
+  if (!is.na(n)) DBI::dbExecute(conn, paste0("SET threads TO ", n, ";"))
+})
+DBI::dbExecute(conn, "SET memory_limit = '8GB';")          # adjust as needed
+
 filtered_views(conn, aoi_wkt)
 
 # 1a ----
@@ -15,12 +26,13 @@ vribem_view(conn, validate_intersect = FALSE)
 duckdb::duckdb_read_csv(conn, "beu_bec_corr",  "inst/csv/Allowed_BEC_BEUs_NE_ALL.csv", temporary = TRUE)
 
 vribem_corrections_view(conn, beu_bec = "beu_bec_corr")
-
+DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_vribem_corr ON VRIBEM_CORRECTIONS USING RTREE (Shape);")
 
 #1c ----
 # TODO create init for beu_wetland_updates
 duckdb::duckdb_read_csv(conn, "beu_wetland_updates",  "inst/csv/beu_wetland_updates.csv", temporary = TRUE)
 vri_bem_wetlands_corrections_view(conn, beu_wetland_updates = "beu_wetland_updates")
+DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_vribem_wc ON VRIBEM_WETLANDS_CORRECTIONS USING RTREE (Shape);")
 
 #1d ----
 import_rules_to_duckdb(conn, 
@@ -38,7 +50,6 @@ unique_eco <- create_unique_ecosystem_dt(conn = conn, vri_bem =  "VRIBEM_WETLAND
 
 fwrite(unique_eco, file = "../unique_ecosystem.csv")
 
-
 #3 ----
 
 elev_rast <- terra::rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
@@ -51,12 +62,14 @@ merge_elevation_duckdb(conn = conn,
 #                                        elevation_threshold = 1400)
 
 # merge cutblock
-#TODO add more verbose steps in fonction to see progress
+# V_CCB is already a materialized indexed table (created by filtered_views);
+# pass it directly to merge_ccb_duckdb.
  merge_ccb_duckdb(conn,
                   vri_bem_tbl  = "VRIBEM_ELEVATION",
                   ccb_tbl      = "V_CCB",
                   tolerance_m2 = 10,
                   result_tbl   = "VRIBEM_CCB") 
+DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_vribem_ccb ON VRIBEM_CCB USING RTREE (Shape);")
 
 #4 ----
 
@@ -85,7 +98,7 @@ calc_hem_fields_duckdb(conn, vri_bem_tbl = "VRIBEM_CCB", fire_tbl = "V_FIRE")
 #5 ----
 
 export_dt <- create_RRM_ecosystem_duckdb(conn, vri_bem_tbl = "VRIBEM_CCB")
-
+})
 fwrite(export_dt, file = "../RRM_input_table.csv")
 saveRDS(export_dt, file = "./data-raw/RRM_input_table.rds")
 

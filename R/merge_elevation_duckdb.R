@@ -42,6 +42,7 @@
 #'
 #' @importFrom terra terrain `add<-`
 #' @importFrom arrow write_parquet
+#' @importFrom sf st_as_sfc st_crs<- st_sf
 #' @import DBI
 #' @import duckdb
 #' @export
@@ -55,108 +56,114 @@ merge_elevation_duckdb <- function(conn,
   stopifnot(inherits(conn, "duckdb_connection"))
   stopifnot(is.character(vri_bem_tbl), length(vri_bem_tbl) == 1L)
 
+  t0_total <- proc.time()[["elapsed"]]
+  logger::log_info("merge_elevation_duckdb: starting (vri_bem_tbl={vri_bem_tbl}, threshold={elevation_threshold}m)")
+
   on.exit({
-    # Clean up temp parquet files even on error
-    if (exists("f_dem",    inherits = FALSE)) try(unlink(f_dem),    silent = TRUE)
-    if (exists("f_slope",  inherits = FALSE)) try(unlink(f_slope),  silent = TRUE)
-    if (exists("f_aspect", inherits = FALSE)) try(unlink(f_aspect), silent = TRUE)
+    # Clean up temp parquet file and temp table even on error
+    if (exists("f_terrain", inherits = FALSE)) try(unlink(f_terrain), silent = TRUE)
+    try(DBI::dbExecute(conn, "DROP TABLE IF EXISTS _elev_vri_tmp;"), silent = TRUE)
   }, add = TRUE)
 
   # ------------------------------------------------------------------
   # 1. Build terrain raster (slope + aspect in radians) ---------------
   # ------------------------------------------------------------------
+  t0 <- proc.time()[["elapsed"]]
   if (is.null(terrain_raster)) {
     terrain_raster <- terra::terrain(elev_raster, v = c("slope", "aspect"), unit = "radians")
   }
+  logger::log_info("merge_elevation_duckdb: terrain computed ({round(proc.time()[['elapsed']] - t0, 1)}s)")
 
   # ------------------------------------------------------------------
-  # 2. Write each layer to a temp Parquet file ------------------------
+  # 2. Crop rasters to the VRI-BEM bounding box + 1-cell buffer ------
   #
-  # terra::as.data.frame(xy = TRUE) produces a flat (x, y, value) table —
-  # far smaller than SpatVector polygons.  Writing to Parquet lets DuckDB
-  # stream it from disk with read_parquet() so the file never fully lives
-  # in DuckDB's memory either.
+  # For large AOIs the full raster can be enormous.  Cropping before
+  # converting to Parquet means only the cells that can possibly fall
+  # inside a VRI-BEM polygon are materialised on disk, dramatically
+  # reducing both Parquet file size and the number of rows DuckDB
+  # must evaluate in the spatial join.
   # ------------------------------------------------------------------
-  f_dem   <- tempfile(fileext = ".parquet")
-  f_slope <- tempfile(fileext = ".parquet")
-  f_aspect <- tempfile(fileext = ".parquet")
+  t0 <- proc.time()[["elapsed"]]
+  bbox_row <- DBI::dbGetQuery(conn, sprintf(
+    "SELECT MIN(ST_XMin(Shape)) AS xmin, MAX(ST_XMax(Shape)) AS xmax,
+            MIN(ST_YMin(Shape)) AS ymin, MAX(ST_YMax(Shape)) AS ymax
+     FROM %s",
+    vri_bem_tbl
+  ))
+  raster_res <- terra::res(elev_raster)[1L]
+  crop_ext   <- terra::ext(
+    bbox_row$xmin - raster_res,
+    bbox_row$xmax + raster_res,
+    bbox_row$ymin - raster_res,
+    bbox_row$ymax + raster_res
+  )
+  elev_raster    <- terra::crop(elev_raster,    crop_ext)
+  terrain_raster <- terra::crop(terrain_raster, crop_ext)
+  logger::log_info("merge_elevation_duckdb: raster cropped to bbox ({round(proc.time()[['elapsed']] - t0, 1)}s)")
 
-  arrow::write_parquet(
-    terra::as.data.frame(elev_raster,                   xy = TRUE, na.rm = FALSE),
-    f_dem
-  )
-  arrow::write_parquet(
-    terra::as.data.frame(terrain_raster[["slope"]],     xy = TRUE, na.rm = FALSE),
-    f_slope
-  )
-  arrow::write_parquet(
-    terra::as.data.frame(terrain_raster[["aspect"]],    xy = TRUE, na.rm = FALSE),
-    f_aspect
-  )
+  # ------------------------------------------------------------------
+  # 3. Stack layers + materialize polygons + rasterize row_id --------
+  #
+  # Key insight: terra::rasterize() (C++ scanline fill) assigns each
+  # raster cell a polygon row_id orders of magnitude faster than
+  # DuckDB's per-cell ST_Intersects, even with an RTREE.  By burning
+  # row_id into the Parquet, the DuckDB aggregation becomes a plain
+  # GROUP BY integer — no geometry math at all.
+  # ------------------------------------------------------------------
+  t0 <- proc.time()[["elapsed"]]
+  elev_col <- names(elev_raster)[1L]          # save before add() renames
+  terra::add(elev_raster) <- terrain_raster   # stack: elev, slope, aspect
+
+  # Materialize the view into a temp table so rowid is stable and we
+  # only evaluate the view chain once.
+  n_poly <- DBI::dbGetQuery(conn, sprintf("SELECT count(*) AS n FROM %s;", vri_bem_tbl))$n
+  DBI::dbExecute(conn, "DROP TABLE IF EXISTS _elev_vri_tmp;")
+  DBI::dbExecute(conn, sprintf(
+    "CREATE TEMP TABLE _elev_vri_tmp AS
+     SELECT rowid AS row_id, Shape, BEUMC_S1, BEUMC_S2, BEUMC_S3, BGC_ZONE
+     FROM %s;",
+    vri_bem_tbl
+  ))
+  logger::log_info("merge_elevation_duckdb: {n_poly} polygons materialized ({round(proc.time()[['elapsed']] - t0, 1)}s)")
+
+  # Export polygon geometries as WKB → SpatVector, rasterize to assign
+  # row_id to each cell.  terra uses a C++ scanline fill: ~10-20s for
+  # 150K polygons vs ~100s for DuckDB ST_Intersects per cell.
+  t0 <- proc.time()[["elapsed"]]
+  poly_wkb <- DBI::dbGetQuery(conn,
+    "SELECT row_id, ST_AsWKB(Shape) AS wkb FROM _elev_vri_tmp ORDER BY row_id;")
+  polys_sfc <- sf::st_as_sfc(poly_wkb$wkb)
+  sf::st_crs(polys_sfc) <- terra::crs(elev_raster)
+  polys_sv  <- terra::vect(sf::st_sf(row_id = poly_wkb$row_id, geometry = polys_sfc))
+  rm(poly_wkb, polys_sfc)
+  id_raster <- terra::rasterize(polys_sv, elev_raster[[1L]], field = "row_id")
+  names(id_raster) <- "row_id"
+  rm(polys_sv)
+  logger::log_info("merge_elevation_duckdb: {n_poly} polygons rasterized ({round(proc.time()[['elapsed']] - t0, 1)}s)")
+
+  # Stack row_id as 4th layer.  na.rm = TRUE drops cells not in any
+  # polygon (row_id = NA) as well as raster no-data, so the Parquet
+  # contains only cells inside polygons — smaller file, faster hash join.
+  # xy coordinates are no longer needed (no spatial join in SQL).
+  t0 <- proc.time()[["elapsed"]]
+  terra::add(elev_raster) <- id_raster        # 4th layer: row_id
+  rm(id_raster, terrain_raster)
+  f_terrain <- tempfile(fileext = ".parquet")
+  raster_df <- terra::as.data.frame(elev_raster, xy = FALSE, na.rm = TRUE)
+  arrow::write_parquet(raster_df, f_terrain)
+  logger::log_info("merge_elevation_duckdb: parquet written ({nrow(raster_df)} cells inside polygons, {round(proc.time()[['elapsed']] - t0, 1)}s)")
+  rm(raster_df)
 
   # ------------------------------------------------------------------
-  # 3. SQL: spatial join (ST_Point) + aggregate -----------------------
+  # 4. Pure hash-join aggregation in DuckDB (no geometry) ------------
   #
-  # DuckDB reads the parquet files directly from disk — no dbWriteTable.
-  # ST_Contains(polygon, ST_Point(x, y)) replaces a polygon-polygon
-  # intersection; it is cheaper and requires no cell geometry at all.
-  #
-  # Constant: radians → percent slope (preserves original formula exactly).
-  # Circular mean aspect only over cells where slope > 0.
+  # The stats CTE groups the Parquet by integer row_id — no ST_*
+  # functions, no RTREE, no geometry columns needed.  The joined CTE
+  # and final SELECT are unchanged from before.
   # ------------------------------------------------------------------
+  t0 <- proc.time()[["elapsed"]]
+  logger::log_info("merge_elevation_duckdb: running hash-join aggregation (no geometry)...")
   constant1_sql <- 57.29578 / 90 * 100
-  tmp_stats_tbl <- "_elev_stats_tmp"
-
-  sql_agg <- sprintf(
-    "CREATE OR REPLACE TEMP TABLE %s AS
-    SELECT
-      v.rowid                                          AS row_id,
-      AVG(d.%s)                                                         AS ELEV,
-      AVG(s.slope) * %.10f                                              AS MEAN_SLOPE,
-      CASE
-        WHEN SUM(CASE WHEN s.slope > 0 AND s.slope IS NOT NULL THEN 1 ELSE 0 END) = 0
-          THEN NULL
-        ELSE
-          (degrees(
-            atan2(
-              SUM(CASE WHEN s.slope > 0 AND s.slope IS NOT NULL
-                       THEN sin(a.aspect) ELSE 0.0 END)
-              / SUM(CASE WHEN s.slope > 0 AND s.slope IS NOT NULL THEN 1 ELSE 0 END),
-              SUM(CASE WHEN s.slope > 0 AND s.slope IS NOT NULL
-                       THEN cos(a.aspect) ELSE 0.0 END)
-              / SUM(CASE WHEN s.slope > 0 AND s.slope IS NOT NULL THEN 1 ELSE 0 END)
-            )
-          ) + 360) %% 360
-      END                                                               AS MEAN_ASP
-    FROM %s v
-    JOIN read_parquet('%s') d ON ST_Contains(v.Shape, ST_Point(d.x, d.y))
-    JOIN read_parquet('%s') s ON s.x = d.x AND s.y = d.y
-    JOIN read_parquet('%s') a ON a.x = d.x AND a.y = d.y
-    GROUP BY v.rowid",
-    tmp_stats_tbl,
-    names(elev_raster)[1L],
-    constant1_sql,
-    vri_bem_tbl,
-    gsub("\\\\", "/", f_dem),
-    gsub("\\\\", "/", f_slope),
-    gsub("\\\\", "/", f_aspect)
-  )
-
-  DBI::dbExecute(conn, sql_agg)
-
-  # Warn about polygons with no elevation
-  no_elev_rows <- DBI::dbGetQuery(
-    conn,
-    sprintf("SELECT row_id FROM %s WHERE ELEV IS NULL", tmp_stats_tbl)
-  )
-  if (nrow(no_elev_rows) > 0L) {
-    warning("could not calculate elevation for the following row ids: ",
-            paste(no_elev_rows$row_id, collapse = ", "))
-  }
-
-  # ------------------------------------------------------------------
-  # 4. SQL: join stats + derive ABOVE_ELEV_THOLD and SLOPE_MOD -------
-  # ------------------------------------------------------------------
   no_slope_mod_MC <- paste0(
     "'",
     paste(
@@ -168,14 +175,37 @@ merge_elevation_duckdb <- function(conn,
 
   sql_result <- sprintf(
     "CREATE OR REPLACE TEMP TABLE %s AS
-    WITH joined AS (
+    WITH stats AS (
+      SELECT
+        CAST(row_id AS INTEGER)                                           AS row_id,
+        AVG(%s)                                                           AS ELEV,
+        AVG(slope) * %.10f                                                AS MEAN_SLOPE,
+        CASE
+          WHEN SUM(CASE WHEN slope > 0 AND slope IS NOT NULL THEN 1 ELSE 0 END) = 0
+            THEN NULL
+          ELSE
+            (degrees(
+              atan2(
+                SUM(CASE WHEN slope > 0 AND slope IS NOT NULL
+                         THEN sin(aspect) ELSE 0.0 END)
+                / SUM(CASE WHEN slope > 0 AND slope IS NOT NULL THEN 1 ELSE 0 END),
+                SUM(CASE WHEN slope > 0 AND slope IS NOT NULL
+                         THEN cos(aspect) ELSE 0.0 END)
+                / SUM(CASE WHEN slope > 0 AND slope IS NOT NULL THEN 1 ELSE 0 END)
+              )
+            ) + 360) %% 360
+        END                                                               AS MEAN_ASP
+      FROM read_parquet('%s')
+      GROUP BY CAST(row_id AS INTEGER)
+    ),
+    joined AS (
       SELECT
         v.*,
         s.ELEV,
         s.MEAN_SLOPE,
         s.MEAN_ASP
       FROM %s v
-      LEFT JOIN %s s ON v.rowid = s.row_id
+      LEFT JOIN stats s ON v.rowid = s.row_id
     )
     SELECT
       * EXCLUDE (ELEV, MEAN_SLOPE, MEAN_ASP),
@@ -233,13 +263,27 @@ merge_elevation_duckdb <- function(conn,
       END AS SLOPE_MOD
     FROM joined",
     result_tbl,
+    elev_col,
+    constant1_sql,
+    gsub("\\\\", "/", f_terrain),
     vri_bem_tbl,
-    tmp_stats_tbl,
     elevation_threshold,
     no_slope_mod_MC, no_slope_mod_MC, no_slope_mod_MC
   )
 
   DBI::dbExecute(conn, sql_result)
+  logger::log_info("merge_elevation_duckdb: hash-join aggregation done ({round(proc.time()[['elapsed']] - t0, 1)}s)")
 
+  # Warn about polygons with no elevation
+  no_elev_rows <- DBI::dbGetQuery(
+    conn,
+    sprintf("SELECT rowid FROM %s WHERE ELEV IS NULL", result_tbl)
+  )
+  if (nrow(no_elev_rows) > 0L) {
+    warning("could not calculate elevation for the following row ids: ",
+            paste(no_elev_rows$rowid, collapse = ", "))
+  }
+
+  logger::log_info("merge_elevation_duckdb: done -> {result_tbl} (total {round(proc.time()[['elapsed']] - t0_total, 1)}s)")
   invisible(result_tbl)
 }

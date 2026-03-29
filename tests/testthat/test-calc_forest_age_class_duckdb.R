@@ -41,12 +41,12 @@ make_vri_tbl <- function(conn,
   invisible(conn)
 }
 
-# Build a minimal CCB table with a HARVEST_YEAR column.
+# Build a minimal CCB table with a HARVEST_START_YEAR_CALENDAR column.
 make_ccb_tbl <- function(conn,
                           tbl = "CCB_TEST",
                           harvest_years = 2020L) {
   row_sqls <- vapply(harvest_years, function(yr) {
-    sprintf("SELECT CAST(%d AS INTEGER) AS HARVEST_YEAR", yr)
+    sprintf("SELECT CAST(%d AS INTEGER) AS HARVEST_START_YEAR_CALENDAR", yr)
   }, character(1L))
   union_sql <- paste(row_sqls, collapse = "\nUNION ALL\n")
   DBI::dbExecute(conn, sprintf(

@@ -19,7 +19,7 @@ vribem_corrections_view <- function(conn, beu_bec, clear_site_ma = TRUE, use_ife
                                                  "COV_PCT_1", "LBL_VEGCOV", "Area_Ha", "BGC_ZONE", "BGC_SUBZON",
                                                  "SPEC_PCT_1"))
 
-  duckdb::dbSendQuery(conn, "
+  DBI::dbExecute(conn, "
     CREATE OR REPLACE TEMP TABLE VRIBEM_CORRECTIONS AS (
       SELECT vri_bem.* 
       FROM V_VRIBEM vri_bem
@@ -35,7 +35,7 @@ vribem_corrections_view <- function(conn, beu_bec, clear_site_ma = TRUE, use_ife
 
   
   # Clear SITE_M#A based on param but SITE_M3A is always cleared regardless of param.
-  duckdb::dbSendQuery(conn, 
+  DBI::dbExecute(conn, 
     sprintf("UPDATE VRIBEM_CORRECTIONS SET %s SITE_M3A = NULL;", 
         ifelse(clear_site_ma, "SITE_M1A = NULL, SITE_M2A = NULL,", ""))) 
   
@@ -101,7 +101,7 @@ vribem_corrections_view <- function(conn, beu_bec, clear_site_ma = TRUE, use_ife
     lbl_edit = "Updated to 10 AP because BCLCS_LV_5 = AP")
 
   ## BU - (line 464) -----
-  duckdb::dbSendQuery(conn, 
+  DBI::dbExecute(conn, 
     "UPDATE VRIBEM_CORRECTIONS
       SET SDEC_1 = 10,
        DISTCLS_1 = 'F',
@@ -190,7 +190,7 @@ vribem_corrections_view <- function(conn, beu_bec, clear_site_ma = TRUE, use_ife
     lbl_edit = "Updated to 10 UR because BCLCS_LV_5 = UR")
   
   ## TC - Transportation Corridor (Component 2) (line 564) ----
-  duckdb::dbSendQuery(conn, 
+  DBI::dbExecute(conn, 
     "UPDATE VRIBEM_CORRECTIONS 
       SET SDEC_1 = 8,
        SDEC_2 = 2, 
@@ -209,7 +209,7 @@ vribem_corrections_view <- function(conn, beu_bec, clear_site_ma = TRUE, use_ife
 
   # Update STAND_A1 ----
   # line 608 (no `else if` be careful! it's a simple if)
-  duckdb::dbSendQuery(conn, 
+  DBI::dbExecute(conn, 
     "UPDATE VRIBEM_CORRECTIONS
       SET STAND_A1 = 'B', 
        lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || 'Updated STAND_A1 to B because SPEC_CD_1 = ' || SPEC_CD_1 || ' and SPEC_PCT_1 >= 75 and STAND_A1 was C or M' ELSE 'Updated STAND_A1 to B because SPEC_CD_1 = ' || SPEC_CD_1 || ' and SPEC_PCT_1 >= 75 and STAND_A1 was C or M' END, 
@@ -218,7 +218,7 @@ vribem_corrections_view <- function(conn, beu_bec, clear_site_ma = TRUE, use_ife
   )
 
   # line 618
-  duckdb::dbSendQuery(conn, 
+  DBI::dbExecute(conn, 
     "UPDATE VRIBEM_CORRECTIONS 
       SET STAND_A1 = 'M', 
        lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || 'Updated STAND_A1 to M because SPEC_CD_1 = ' || SPEC_CD_1 || ' and SPEC_PCT_1 >= 50 and SPEC_PCT_1 < 75 and STAND_A1 was C or M' ELSE 'Updated STAND_A1 to M because SPEC_CD_1 = ' || SPEC_CD_1 || ' and SPEC_PCT_1 >= 50 and SPEC_PCT_1 < 75 and STAND_A1 was C or M' END, 
@@ -227,7 +227,7 @@ vribem_corrections_view <- function(conn, beu_bec, clear_site_ma = TRUE, use_ife
   )
 
   # line 627
-  duckdb::dbSendQuery(conn, 
+  DBI::dbExecute(conn, 
     "UPDATE VRIBEM_CORRECTIONS 
       SET STAND_A1 = 'C', 
        lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || 'Updated STAND_A1 to C because SPEC_CD_1 = ' || SPEC_CD_1 || ' and SPEC_PCT_1 >= 75 and STAND_A1 was M' ELSE 'Updated STAND_A1 to C because SPEC_CD_1 = ' || SPEC_CD_1 || ' and SPEC_PCT_1 >= 75 and STAND_A1 was M' END, 
@@ -246,30 +246,30 @@ vribem_corrections_view <- function(conn, beu_bec, clear_site_ma = TRUE, use_ife
                                                   "DISTCLS_1", "DISTSCLS_1", "DISSSCLS_1", "SECL_1",
                                                   "SESUBCL_1", "COND_1", "VIAB_1", "FORESTED_1", "TREE_C1", "SHRUB_C1"))
   
-  duckdb::dbSendQuery(conn, 
+  DBI::dbExecute(conn, 
     "UPDATE VRIBEM_CORRECTIONS 
       SET SDEC_2 = 0, SDEC_3 = 0 
       WHERE blank_eco_variables = TRUE;")
 
   # Validate total deciles line 654 
-  duckdb::dbSendQuery(conn, 
+  DBI::dbExecute(conn, 
     "UPDATE VRIBEM_CORRECTIONS 
       SET DEC_Total = IFNULL(SDEC_1, 0) + IFNULL(SDEC_2, 0) + IFNULL(SDEC_3, 0), 
        row_updated = TRUE
       WHERE SMPL_TYPE IS NULL;")
   
-  duckdb::dbSendQuery(conn, 
+  DBI::dbExecute(conn, 
     "UPDATE VRIBEM_CORRECTIONS 
       SET lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || '**** DECILE TOTAL ' || IFNULL(SDEC_1, 0) || '+' || IFNULL(SDEC_2, 0) || '+' || IFNULL(SDEC_3, 0) || '=' || DEC_Total ELSE '**** DECILE TOTAL ' || IFNULL(SDEC_1, 0) || '+' || IFNULL(SDEC_2, 0) || '+' || IFNULL(SDEC_3, 0) || '=' || DEC_Total END
       WHERE SMPL_TYPE IS NULL;")
 
   #Check for allowed BEC/BEU combinations
-  check_allowed_bec_beu_view(conn = conn, vri_bem_view = "VRIBEM_CORRECTIONS", beu_bec = beu_bec)
+  check_allowed_bec_beu_view(conn = conn, vri_bem_view = "VRIBEM_CORRECTIONS", beu_bec_view = beu_bec)
 
   # for all feature that intersect with rivers
   # SITE_M3A becomes "a"
   # and lbl is updated to say the old value became "a"
-  duckdb::dbSendQuery(conn, 
+  DBI::dbExecute(conn, 
     "UPDATE VRIBEM_CORRECTIONS 
       SET SITE_M3A = 'a', 
        lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || 'Updated SITE_M3A from ' || SITE_M3A || ' to a because unit intersects with river feature' ELSE 'Updated SITE_M3A from ' || SITE_M3A || ' to a because unit intersects with river feature' END
@@ -295,7 +295,7 @@ vribem_corrections_view <- function(conn, beu_bec, clear_site_ma = TRUE, use_ife
 
 combine_duplicated_BEUMC_view <- function(conn, view_name){
   
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
     UPDATE %s 
     SET SDEC_1 = SDEC_1 + SDEC_2,
         SDEC_2 = SDEC_3,
@@ -343,13 +343,13 @@ shift_eco_variables_in_view <- function(
   }
 
   if (set_clause != ""){
-    duckdb::dbSendQuery(conn, sprintf("UPDATE %s SET %s WHERE %s;", view_name, set_clause, cond))
+    DBI::dbExecute(conn, sprintf("UPDATE %s SET %s WHERE %s;", view_name, set_clause, cond))
   } 
   
 }
 
 fix_vri_bem_1st_eco <- function(conn, view_name = "VRIBEM_CORRECTIONS", cond, sdec_1 = 10, beumc_s1, lbl_edit){
-  duckdb::dbSendQuery(conn, 
+  DBI::dbExecute(conn, 
     sprintf("UPDATE %s 
       SET SDEC_1 = %s,
        BEUMC_S1 = '%s', 
@@ -375,7 +375,7 @@ remove_inadequate_wetlands_view <- function(conn, view_name = "VRIBEM_CORRECTION
   add_col_to_tbl(conn, tbl_name = view_name, col = "treed_pure_WL", type = "BOOLEAN DEFAULT FALSE")
 
   
-  duckdb::dbSendQuery(conn,
+  DBI::dbExecute(conn,
      sprintf("
     UPDATE %s 
     SET SDEC_2 = SDEC_2 + SDEC_3,
@@ -392,13 +392,13 @@ remove_inadequate_wetlands_view <- function(conn, view_name = "VRIBEM_CORRECTION
                               shift_pattern = list(c("3", NA)))
   
   #Replace wetlands in 2nd component ----
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
     UPDATE %s 
     SET treed_WL_2_from_3 = TRUE, 
     WHERE BCLCS_LV_4 IN ('TB', 'TC', 'TM') AND BEUMC_S2 = 'WL' AND SDEC_3 > 0 AND SMPL_TYPE IS NULL AND NOT row_updated;",
     view_name))
   
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
     UPDATE %s 
     SET treed_WL_2_to_1 = TRUE, 
     WHERE BCLCS_LV_4 IN ('TB', 'TC', 'TM') AND BEUMC_S2 = 'WL' AND (SDEC_3 = 0 OR SDEC_3 IS NULL) AND SMPL_TYPE IS NULL AND NOT row_updated;",
@@ -410,7 +410,7 @@ remove_inadequate_wetlands_view <- function(conn, view_name = "VRIBEM_CORRECTION
                               shift_pattern = list(c(2, 3), c(3, NA)))
   
   ## When there is a value in 3rd component update 2nd from 3rd ----
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
     UPDATE %s 
     SET SDEC_2 = SDEC_2 + SDEC_3,
         SDEC_3 = 0,
@@ -420,7 +420,7 @@ remove_inadequate_wetlands_view <- function(conn, view_name = "VRIBEM_CORRECTION
     view_name))
   
   ## When there is no value in 3rd component update 1st from 2nd -----
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
     UPDATE %s 
     SET SDEC_1 = SDEC_1 + SDEC_2,
         SDEC_2 = 0,
@@ -435,7 +435,7 @@ remove_inadequate_wetlands_view <- function(conn, view_name = "VRIBEM_CORRECTION
                               shift_pattern = list(c(2, NA)))
   
   #Replace wetlands from 1st component -----
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
     UPDATE %s 
     SET treed_WL_1_from_2 = TRUE, 
       SDEC_3 = 0, 
@@ -450,7 +450,7 @@ remove_inadequate_wetlands_view <- function(conn, view_name = "VRIBEM_CORRECTION
                               shift_pattern = list(c(1,2), c(2,3), c(3,NA)))
   
   #Warning if polygon is pule WL ----
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
     UPDATE %s 
     SET treed_pure_WL = TRUE,
       lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || '**** Warning: Polygon is pure WL, but BCLCS_LV_4 IN (TB, TC, TM).' ELSE '**** Warning: Polygon is pure WL, but BCLCS_LV_4 IN (TB, TC, TM).' END, 
@@ -462,7 +462,7 @@ remove_inadequate_wetlands_view <- function(conn, view_name = "VRIBEM_CORRECTION
   # In cases for small lakes (LS), large lakes (LL), and open water (OW) where BCLCS_LV_5 AND LAND_CD_1 DO NOT equal LA,
   # remove BEU label for lakes -- will need to be manually assigned. Otherwise, if BCLCS_LV_5 OR LAND_CD_1 = LA, leave BEU as-is.
   # include "OT" with "LA". Sometimes lakes are assigned BCLCS = "OT"
-    duckdb::dbSendQuery(conn, sprintf("
+    DBI::dbExecute(conn, sprintf("
       UPDATE %s 
       SET BEUMC_S1 = NULL
       WHERE BEUMC_S1 IN('LS', 'LL', 'OW') AND BCLCS_LV_5 NOT IN ('LA','OT') AND LAND_CD_1 NOT IN ('LA','OT');",
@@ -472,19 +472,19 @@ remove_inadequate_wetlands_view <- function(conn, view_name = "VRIBEM_CORRECTION
   # remove associated structure/stand information so it correctly populates suitability
   # make sure non-forested features are not indicated as forested
    
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
       UPDATE %s 
       SET STRCT_S1 = NULL, STAND_A1 = NULL, FORESTED_1 = 'N'
       WHERE BEUMC_S1 IN ('LS', 'LL', 'OW', 'MI','GL', 'TC','UR','RE','RI','ES','ST','UR') ;",
       view_name))
 
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
       UPDATE %s 
       SET STRCT_S2 = NULL, STAND_A2 = NULL, FORESTED_2 = 'N'
       WHERE BEUMC_S2 IN ('LS', 'LL', 'OW', 'MI','GL', 'TC','UR','RE','RI','ES','ST','UR') ;",
       view_name))
   
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
       UPDATE %s 
       SET STRCT_S3 = NULL, STAND_A3 = NULL, FORESTED_3 = 'N'
       WHERE BEUMC_S3 IN ('LS', 'LL', 'OW', 'MI','GL', 'TC','UR','RE','RI','ES','ST','UR') ;",
@@ -498,13 +498,13 @@ check_allowed_bec_beu_view <- function(conn, vri_bem_view, beu_bec_view) {
 
   add_col_to_tbl(conn, tbl_name = vri_bem_view, col = "merge_key", type = "VARCHAR DEFAULT''")
   
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
   UPDATE %s 
   SET merge_key = IFNULL(BGC_ZONE, '') || IFNULL(BGC_SUBZON, '');",
   vri_bem_view))
 
   #Value 1
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
   UPDATE %s as vri_bem
     SET
       BEUMC_S1 = beu_bec.Change_to_BEU, 
@@ -518,7 +518,7 @@ check_allowed_bec_beu_view <- function(conn, vri_bem_view, beu_bec_view) {
       AND len(Change_to_BEU) = 2",
     vri_bem_view, beu_bec_view))
   
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
   UPDATE %s as vri_bem
     SET
       lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || vri_bem.merge_key || ' ' || vri_bem.BEUMC_S1 || '  in decile 1 is invalid combination (mapper needs to assess)' 
@@ -531,7 +531,7 @@ check_allowed_bec_beu_view <- function(conn, vri_bem_view, beu_bec_view) {
       AND len(Change_to_BEU) != 2",
     vri_bem_view, beu_bec_view))
   
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
   UPDATE %s as vri_bem
     SET
       lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || vri_bem.merge_key || ' ' || vri_bem.BEUMC_S1 || ' in decile 1 combination is not listed' 
@@ -545,7 +545,7 @@ check_allowed_bec_beu_view <- function(conn, vri_bem_view, beu_bec_view) {
     vri_bem_view, beu_bec_view))
   
   #Value 2
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
   UPDATE %s as vri_bem
     SET
       BEUMC_S2 = beu_bec.Change_to_BEU, 
@@ -559,7 +559,7 @@ check_allowed_bec_beu_view <- function(conn, vri_bem_view, beu_bec_view) {
       AND len(Change_to_BEU) = 2",
     vri_bem_view, beu_bec_view))
   
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
   UPDATE %s as vri_bem
     SET
       lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || vri_bem.merge_key || ' ' || vri_bem.BEUMC_S2 || '  in decile 2 is invalid combination (mapper needs to assess)' 
@@ -572,7 +572,7 @@ check_allowed_bec_beu_view <- function(conn, vri_bem_view, beu_bec_view) {
       AND len(Change_to_BEU) != 2",
     vri_bem_view, beu_bec_view))
   
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
   UPDATE %s as vri_bem
     SET
       lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || vri_bem.merge_key || ' ' || vri_bem.BEUMC_S2 || ' in decile 2 combination is not listed' 
@@ -586,7 +586,7 @@ check_allowed_bec_beu_view <- function(conn, vri_bem_view, beu_bec_view) {
     vri_bem_view, beu_bec_view))
   
   #Value 3
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
   UPDATE %s as vri_bem
     SET
       BEUMC_S3 = beu_bec.Change_to_BEU, 
@@ -600,7 +600,7 @@ check_allowed_bec_beu_view <- function(conn, vri_bem_view, beu_bec_view) {
       AND len(Change_to_BEU) = 2",
     vri_bem_view, beu_bec_view))
   
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
   UPDATE %s as vri_bem
     SET
       lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || vri_bem.merge_key || ' ' || vri_bem.BEUMC_S3 || '  in decile 3 is invalid combination (mapper needs to assess)' 
@@ -613,7 +613,7 @@ check_allowed_bec_beu_view <- function(conn, vri_bem_view, beu_bec_view) {
       AND len(Change_to_BEU) != 2",
     vri_bem_view, beu_bec_view))
   
-  duckdb::dbSendQuery(conn, sprintf("
+  DBI::dbExecute(conn, sprintf("
   UPDATE %s as vri_bem
     SET
       lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || vri_bem.merge_key || ' ' || vri_bem.BEUMC_S3 || ' in decile 3 combination is not listed' 
