@@ -277,6 +277,8 @@ vribem_corrections_view <- function(conn, beu_bec, clear_site_ma = TRUE, use_ife
 
   # remove temp variables 
   rm_cols_from_tbl(conn, tbl_name = "VRIBEM_CORRECTIONS", c("row_updated", "blank_eco_variables"))
+
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_vribem_corr ON VRIBEM_CORRECTIONS USING RTREE (Shape);")
 }
 
 

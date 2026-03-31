@@ -278,4 +278,6 @@ merge_ccb_duckdb <- function(conn,
     tolerance_m2 = tolerance_m2,
     result_tbl   = result_tbl
   )
+
+  DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s ON %s USING RTREE (Shape);", tolower(result_tbl), result_tbl))
 }

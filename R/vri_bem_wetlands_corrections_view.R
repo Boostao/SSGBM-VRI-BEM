@@ -408,4 +408,6 @@ vri_bem_wetlands_corrections_view <- function(conn, vri_bem = "VRIBEM_CORRECTION
   # clean temp vars 
   rm_cols_from_tbl(conn, tbl_name = tbl_name, 
     cols = c("init_SITE_M3a", "wl_3_ind", "curr_beu_code", "new_beu_code", "curr_wl_zone", "new_wl_zone", "ind_0_to_1", "ind_0_to_3", "riparian_adj_ind")) 
+
+  DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s ON %s USING RTREE (Shape);", tolower(tbl_name), tbl_name))
 }

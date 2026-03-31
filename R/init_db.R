@@ -6,6 +6,14 @@
 #' @param ask Boolean, whether to ask before re-initializing existing tables.
 #' @param bem_dsn data source name for BEM data.
 #' @param bem_dsn data source name for BEM data.
+#' @param temp_dir Optional character path for DuckDB's temp directory (used
+#'   for spill-to-disk during large spatial queries).  Created automatically
+#'   if it does not exist.  When `NULL` (default) the DuckDB default is used.
+#' @param threads Optional integer number of threads for DuckDB to use.
+#'   Defaults to `parallel::detectCores()` when `NULL`.
+#' @param memory_limit Optional DuckDB memory limit string, e.g. `"8GB"`.
+#'   When `NULL` (default) the DuckDB default (~80\% of RAM) applies.  Set to
+#'   ~70\% of available RAM for large AOIs to leave headroom for R and terra.
 #' @export
 #' @import duckdb
 #' @details This needs to be run once to create the database and load the
@@ -234,7 +242,8 @@ init_generic <- function(conn = init_conn(),
                          recordid,
                          filter1 = identity,
                          .include = c(),
-                         tablename) {
+                         tablename,
+                         geom_as_wkt = FALSE) {
   if (tbl_exists(conn, tablename)) {
     logger::log_info("%s table already exists in database." |>
                        sprintf(tablename))
@@ -257,7 +266,11 @@ init_generic <- function(conn = init_conn(),
     }
   }
 
-  gen_geom <- "ST_GeomFromWKB(ST_AsWKB(%s)) Shape" |> sprintf(geom)
+  gen_geom <- if (geom_as_wkt) {
+    "ST_AsText(%s) Shape" |> sprintf(geom)
+  } else {
+    "ST_GeomFromWKB(ST_AsWKB(%s)) Shape" |> sprintf(geom)
+  }
 
   # If dsn is null read information from bcdata
   if (is.null(dsn)) {
@@ -276,8 +289,13 @@ init_generic <- function(conn = init_conn(),
 
     layer_proj4 <- meta_proj4(dsn[1], geom_f = geom)
     if (layer_proj4 != target_proj4) {
-      gen_geom <- "ST_GeomFromWKB(ST_AsWKB(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)))) Shape" |>
-        sprintf(geom, layer_proj4, target_proj4)
+      gen_geom <- if (geom_as_wkt) {
+        "ST_AsText(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true))) Shape" |>
+          sprintf(geom, layer_proj4, target_proj4)
+      } else {
+        "ST_GeomFromWKB(ST_AsWKB(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)))) Shape" |>
+          sprintf(geom, layer_proj4, target_proj4)
+      }
     }
     query <- "SELECT %s FROM (%s)" |>
       sprintf(
@@ -298,8 +316,13 @@ init_generic <- function(conn = init_conn(),
       meta_proj4(dsn, geom_f = geom)
     }
     if (layer_proj4 != target_proj4) {
-      gen_geom <- "ST_GeomFromWKB(ST_AsWKB(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)))) Shape" |>
-        sprintf(geom, layer_proj4, target_proj4)
+      gen_geom <- if (geom_as_wkt) {
+        "ST_AsText(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true))) Shape" |>
+          sprintf(geom, layer_proj4, target_proj4)
+      } else {
+        "ST_GeomFromWKB(ST_AsWKB(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)))) Shape" |>
+          sprintf(geom, layer_proj4, target_proj4)
+      }
     }
     query <- if (!is.null(layer)) {
       "SELECT %s FROM ST_Read('%s', layer := '%s')" |>
@@ -316,10 +339,11 @@ init_generic <- function(conn = init_conn(),
                       "CREATE OR REPLACE TABLE %s AS (%s);" |>
                         sprintf(tablename, query))
 
-  logger::log_info("Creating %s spatial index." |> sprintf(tablename))
-
-  DBI::dbExecute(conn, "DROP INDEX IF EXISTS %s_IDX;" |> sprintf(tablename))
-  DBI::dbExecute(conn, "CREATE INDEX %s_IDX ON %s USING RTREE (Shape);" |> sprintf(tablename, tablename))
+  if (!geom_as_wkt) {
+    logger::log_info("Creating %s spatial index." |> sprintf(tablename))
+    DBI::dbExecute(conn, "DROP INDEX IF EXISTS %s_IDX;" |> sprintf(tablename))
+    DBI::dbExecute(conn, "CREATE INDEX %s_IDX ON %s USING RTREE (Shape);" |> sprintf(tablename, tablename))
+  }
 
   logger::log_info("%s initialization complete." |> sprintf(tablename))
 
@@ -495,7 +519,8 @@ init_tsa <- function(conn = init_conn(),
     recordid = "8daa29da-d7f4-401c-83ae-d962e3a28980",
     filter1 = filter1,
     .include = "TSA_NUMBER_DESCRIPTION",
-    tablename = "TSA"
+    tablename = "TSA",
+    geom_as_wkt = TRUE
   )
 
   # make sure aoi within Skeena boundary (if needed)
@@ -509,14 +534,15 @@ init_tsa <- function(conn = init_conn(),
       recordid = "dfc492c0-69c5-4c20-a6de-2c9bc999301f",
       filter1 = filter1,
       .include = "ORG_UNIT_NAME",
-      tablename = "SKEENA"
+      tablename = "SKEENA",
+      geom_as_wkt = TRUE
     )
   }
 }
 
 #' @export
 #' @rdname init
-init_conn <- function(dbdir = defdb(), temp_dir = NULL) {
+init_conn <- function(dbdir = defdb(), temp_dir = NULL, threads = NULL, memory_limit = NULL) {
   cfg <- list()
   if (!is.null(temp_dir)) {
     dir.create(temp_dir, showWarnings = FALSE, recursive = TRUE)
@@ -541,6 +567,12 @@ init_conn <- function(dbdir = defdb(), temp_dir = NULL) {
     }
   }
   DBI::dbExecute(conn, "INSTALL spatial; LOAD spatial;")
+  # Apply thread / memory tuning.  threads defaults to all logical cores;
+  # memory_limit must be a DuckDB size string e.g. '8GB' or NULL to leave
+  # the DuckDB default (~80 % of RAM) in place.
+  n_threads <- if (!is.null(threads)) threads else parallel::detectCores()
+  if (!is.na(n_threads)) DBI::dbExecute(conn, paste0("SET threads TO ", n_threads, ";"))
+  if (!is.null(memory_limit)) DBI::dbExecute(conn, paste0("SET memory_limit = '", memory_limit, "';"))
   return(conn)
 }
 

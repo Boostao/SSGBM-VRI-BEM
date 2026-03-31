@@ -2,16 +2,13 @@
 #'
 #' @param conn A DuckDB connection.
 #' @param vri_bem_tbl Character. Name of the VRI-BEM table to modify in-place.
-#' @param ccb_tbl Character. Name of the CCB table in DuckDB from which the
-#'   most-recent harvest year is derived (default \code{"V_CCB"}).
-#' @param harvest_year_col Character. Name of the harvest-year column inside
-#'   \code{ccb_tbl} (default \code{"HARVEST_YEAR"}).
+#' @param most_recent_harvest_year Integer. The most recent harvest year used to
+#'   override \code{PROJ_AGE_1} from \code{MRSRD_Y} (default: current calendar
+#'   year via \code{as.integer(format(Sys.Date(), "\%Y"))}).
 #' @return Invisibly returns \code{vri_bem_tbl}.
 #' @details
 #' The function modifies \code{vri_bem_tbl} **in-place** by:
 #' \enumerate{
-#'   \item Deriving \code{most_recent_harvest_year} as
-#'         \code{MAX(harvest_year_col)} from \code{ccb_tbl}.
 #'   \item Adding columns \code{VRI_AGE_CL_STS} and \code{VRI_AGE_CL_STD}
 #'         (idempotent — no-op when they already exist).
 #'   \item If \code{MRSRD_Y} is present in \code{vri_bem_tbl}, updating
@@ -20,6 +17,7 @@
 #'   \item Computing \code{VRI_AGE_CL_STS} and \code{VRI_AGE_CL_STD} via
 #'         \code{CASE WHEN} logic matching \code{calc_forest_age_class()}.
 #' }
+#'
 #'
 #' Age-class breakpoints:
 #'
@@ -42,28 +40,15 @@
 #' @export
 calc_forest_age_class_duckdb <- function(conn,
                                          vri_bem_tbl,
-                                         ccb_tbl          = "CCB",
-                                         harvest_year_col = "HARVEST_START_YEAR_CALENDAR") {
+                                         most_recent_harvest_year = as.integer(format(Sys.Date(), "%Y"))) {
 
   stopifnot(DBI::dbIsValid(conn))
   stopifnot(is.character(vri_bem_tbl), nchar(vri_bem_tbl) > 0L)
-  stopifnot(is.character(ccb_tbl),     nchar(ccb_tbl)     > 0L)
-  stopifnot(is.character(harvest_year_col), nchar(harvest_year_col) > 0L)
+  stopifnot(is.integer(most_recent_harvest_year), length(most_recent_harvest_year) == 1L)
 
-  # ── 1. Derive most_recent_harvest_year from the CCB table ────────────────
-  mrhy <- DBI::dbGetQuery(
-    conn,
-    sprintf('SELECT MAX(%s) AS mrhy FROM %s', harvest_year_col, ccb_tbl)
-  )$mrhy
+  mrhy <- most_recent_harvest_year
 
-  if (is.null(mrhy) || is.na(mrhy)) {
-    warning(
-      "calc_forest_age_class_duckdb: MAX(", harvest_year_col, ") from ",
-      ccb_tbl, " is NA; MRSRD_Y override of PROJ_AGE_1 will be skipped."
-    )
-  }
-
-  # ── 2. Add output columns (no-op if they already exist) ─────────────────
+  # ── 1. Add output columns (no-op if they already exist) ─────────────────
   DBI::dbExecute(conn, sprintf(
     "ALTER TABLE %s ADD COLUMN IF NOT EXISTS VRI_AGE_CL_STS DOUBLE",
     vri_bem_tbl
@@ -73,12 +58,12 @@ calc_forest_age_class_duckdb <- function(conn,
     vri_bem_tbl
   ))
 
-  # ── 3. Override PROJ_AGE_1 from MRSRD_Y where the column is present ──────
+  # ── 2. Override PROJ_AGE_1 from MRSRD_Y where the column is present ──────
   existing_cols <- toupper(DBI::dbGetQuery(
     conn, sprintf("PRAGMA table_info('%s')", vri_bem_tbl)
   )$name)
 
-  if ("MRSRD_Y" %in% existing_cols && !is.null(mrhy) && !is.na(mrhy)) {
+  if ("MRSRD_Y" %in% existing_cols) {
     DBI::dbExecute(conn, sprintf(
       "UPDATE %s
          SET PROJ_AGE_1 = %s - TRY_CAST(MRSRD_Y AS DOUBLE)
@@ -87,7 +72,7 @@ calc_forest_age_class_duckdb <- function(conn,
     ))
   }
 
-  # ── 4. Compute VRI_AGE_CL_STS ────────────────────────────────────────────
+  # ── 3. Compute VRI_AGE_CL_STS ────────────────────────────────────────────
   DBI::dbExecute(conn, sprintf(
     "UPDATE %s SET VRI_AGE_CL_STS = CASE
        WHEN TRY_CAST(PROJ_AGE_1 AS DOUBLE) <   0 THEN   -1
@@ -105,7 +90,7 @@ calc_forest_age_class_duckdb <- function(conn,
     vri_bem_tbl
   ))
 
-  # ── 5. Compute VRI_AGE_CL_STD ────────────────────────────────────────────
+  # ── 4. Compute VRI_AGE_CL_STD ────────────────────────────────────────────
   DBI::dbExecute(conn, sprintf(
     "UPDATE %s SET VRI_AGE_CL_STD = CASE
        WHEN TRY_CAST(PROJ_AGE_1 AS DOUBLE) <   0 THEN   -1
