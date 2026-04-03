@@ -19,3 +19,7 @@ update_tbl <- function(conn, tbl_name, set_expr, where_expr) {
     sprintf("UPDATE %s SET %s WHERE %s;", 
     tbl_name, set_expr, ifelse(is.null(where_expr), "1=1", where_expr)))
 }
+
+duckdb_tables <- function(conn) {
+  DBI::dbGetQuery(conn, "SELECT database_name, schema_name, table_name, temporary, has_primary_key, estimated_size, column_count FROM duckdb_tables();")
+}

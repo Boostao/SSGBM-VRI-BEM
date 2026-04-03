@@ -26,6 +26,13 @@
 #'   iteration when computing intersections and differences.  Smaller values
 #'   use less peak memory at the cost of more round-trips; larger values are
 #'   faster but require more RAM.  Default `500L`.
+#' @param mem_limit Character. DuckDB memory limit string (e.g. `"6GB"`) to
+#'   apply for the duration of the spatial batch operations.  By the time this
+#'   function is called the buffer pool may be near-full from prior steps
+#'   (V\_VRI, VRIBEM, etc.), leaving no headroom for even a small
+#'   ST\_Intersection allocation.  Raising the limit lets DuckDB evict clean
+#'   (checkpointed) pages from the V\_ tables on demand.  Restored to the
+#'   original value when the function returns.  Default `"6GB"`.
 #' @param result_tbl Character. Name of the (temp) table written to `conn`
 #'   with the corrected result.  Defaults to `"VRIBEM_CORRECTIONS"`, which
 #'   replaces the input table in-place.
@@ -34,17 +41,17 @@
 #' @import duckdb
 #' @export
 correct_small_lakes_duckdb <- function(conn,
-                                       vri_bem_tbl  = "VRIBEM_CORRECTIONS",
-                                       lakes_tbl    = "V_LAKES",
+                                       vri_bem_tbl = "VRIBEM",
+                                       lakes_tbl = "V_LAKES",
                                        tolerance_m2 = 10,
-                                       batch_size   = 500L,
-                                       result_tbl   = "VRIBEM_CORRECTIONS") {
-
+                                       batch_size = 500L,
+                                       mem_limit = "6GB",
+                                       result_tbl = "VRIBEM") {
   stopifnot(inherits(conn, "duckdb_connection"))
-  stopifnot(is.character(vri_bem_tbl),  length(vri_bem_tbl)  == 1L)
-  stopifnot(is.character(lakes_tbl),    length(lakes_tbl)    == 1L)
-  stopifnot(is.numeric(tolerance_m2),   length(tolerance_m2) == 1L)
-  stopifnot(is.character(result_tbl),   length(result_tbl)   == 1L)
+  stopifnot(is.character(vri_bem_tbl), length(vri_bem_tbl) == 1L)
+  stopifnot(is.character(lakes_tbl), length(lakes_tbl) == 1L)
+  stopifnot(is.numeric(tolerance_m2), length(tolerance_m2) == 1L)
+  stopifnot(is.character(result_tbl), length(result_tbl) == 1L)
 
   t0 <- proc.time()[["elapsed"]]
   logger::log_info("correct_small_lakes_duckdb: starting (vri_bem_tbl={vri_bem_tbl})")
@@ -68,12 +75,12 @@ correct_small_lakes_duckdb <- function(conn,
   # ------------------------------------------------------------------
   # Column introspection
   # ------------------------------------------------------------------
-  all_cols  <- DBI::dbGetQuery(
+  all_cols <- DBI::dbGetQuery(
     conn, sprintf("PRAGMA table_info('%s')", vri_bem_tbl)
   )$name
-  non_geom  <- all_cols[all_cols != "Shape"]
+  non_geom <- all_cols[all_cols != "Shape"]
   spec_cols <- grep("^SPEC_CD_|^SPEC_PCT_", non_geom, value = TRUE)
-  qi        <- function(x) paste0('"', x, '"')
+  qi <- function(x) paste0('"', x, '"')
 
   # ------------------------------------------------------------------
   # Build column SELECT expressions for each branch of the UNION ALL.
@@ -91,16 +98,16 @@ correct_small_lakes_duckdb <- function(conn,
   intersect_exprs <- sapply(all_cols, function(col) {
     qc <- qi(col)
     switch(col,
-      "Shape"      = qc,   # already intersection geometry in tmp_iraw
-      "Area_Ha"    = "round(ST_Area(\"Shape\") / 10000, 2) AS \"Area_Ha\"",
+      "Shape" = qc, # already intersection geometry in tmp_iraw
+      "Area_Ha" = "round(ST_Area(\"Shape\") / 10000, 2) AS \"Area_Ha\"",
       "Shape_Area" = "ST_Area(\"Shape\") AS \"Shape_Area\"",
-      "BEUMC_S1"   = "CASE WHEN ST_Area(\"Shape\") < 100000 THEN 'OW' ELSE 'LS' END AS \"BEUMC_S1\"",
+      "BEUMC_S1" = "CASE WHEN ST_Area(\"Shape\") < 100000 THEN 'OW' ELSE 'LS' END AS \"BEUMC_S1\"",
       "BCLCS_LV_1" = "'N' AS \"BCLCS_LV_1\"",
       "BCLCS_LV_2" = "'W' AS \"BCLCS_LV_2\"",
       "BCLCS_LV_3" = sprintf("NULL AS %s", qc),
       "BCLCS_LV_4" = sprintf("NULL AS %s", qc),
       "BCLCS_LV_5" = "'LA' AS \"BCLCS_LV_5\"",
-      "lbl_edit"   = "'Corrected with FWA Lakes polygons' AS \"lbl_edit\"",
+      "lbl_edit" = "'Corrected with FWA Lakes polygons' AS \"lbl_edit\"",
       {
         if (col %in% spec_cols) sprintf("NULL AS %s", qc) else qc
       }
@@ -128,18 +135,48 @@ correct_small_lakes_duckdb <- function(conn,
   # ------------------------------------------------------------------
   # Temp table names
   # ------------------------------------------------------------------
-  pfx          <- paste0("_csl_", result_tbl, "_")
-  tmp_lku      <- paste0(pfx, "lku")       # lake union geometry
-  tmp_src      <- paste0(pfx, "src")       # numbered non-lake source rows
-  tmp_iraw     <- paste0(pfx, "iraw")      # intersection pieces (raw geometry)
-  tmp_diff     <- paste0(pfx, "diff")      # difference pieces
-  tmp_passthru <- paste0(pfx, "passthru")  # known-lake pass-through
+  pfx <- paste0("_csl_", result_tbl, "_")
+  tmp_lku <- paste0(pfx, "lku") # lake union geometry
+  tmp_src <- paste0(pfx, "src") # numbered non-lake source rows
+  tmp_iraw <- paste0(pfx, "iraw") # intersection pieces (raw geometry)
+  tmp_diff <- paste0(pfx, "diff") # difference pieces
+  tmp_passthru <- paste0(pfx, "passthru") # known-lake pass-through
 
-  on.exit({
-    for (t in c(tmp_lku, tmp_src, tmp_iraw, tmp_diff, tmp_passthru)) {
-      try(DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s;", t)), silent = TRUE)
+  on.exit(
+    {
+      for (t in c(tmp_lku, tmp_src, tmp_iraw, tmp_diff, tmp_passthru)) {
+        try(DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s;", t)), silent = TRUE)
+      }
+    },
+    add = TRUE
+  )
+
+  # Raise memory_limit for the duration of this function.  By the time
+  # correct_small_lakes_duckdb is called the buffer pool is near-full from all
+  # prior steps (V_VRI, VRIBEM_CORRECTIONS, tmp_src, etc.).  A higher ceiling
+  # lets DuckDB evict clean (checkpointed) V_ table pages on demand when the
+  # ST_Intersection / ST_Difference allocations need new buffer frames.
+  # Restored to the original value when the function returns.
+  if (!is.null(mem_limit)) {
+    orig_mem_limit <- tryCatch(
+      DBI::dbGetQuery(
+        conn,
+        "SELECT value FROM duckdb_settings() WHERE name = 'memory_limit'"
+      )$value,
+      error = function(e) NULL
+    )
+    if (!is.null(orig_mem_limit)) {
+      try(DBI::dbExecute(conn, sprintf("SET memory_limit = '%s';", mem_limit)),
+        silent = TRUE
+      )
+      on.exit(
+        try(DBI::dbExecute(conn, sprintf("SET memory_limit = '%s';", orig_mem_limit)),
+          silent = TRUE
+        ),
+        add = TRUE
+      )
     }
-  }, add = TRUE)
+  }
 
   # Disable insertion-order preservation for the heavy geo operations to
   # reduce peak memory usage (restored in on.exit below).
@@ -192,21 +229,23 @@ correct_small_lakes_duckdb <- function(conn,
   # The outer selects (intersect_exprs / diff_exprs) apply attribute
   # overrides and recompute Area_Ha / Shape_Area from the resulting "Shape".
   iraw_batch_exprs <- sapply(all_cols, function(col) {
-    if (col == "Shape")
+    if (col == "Shape") {
       "ST_CollectionExtract(ST_MakeValid(ST_Intersection(c.\"Shape\", u.lake_union)), 3) AS \"Shape\""
-    else
+    } else {
       sprintf("c.%s", qi(col))
+    }
   })
 
   diff_batch_geom_exprs <- sapply(all_cols, function(col) {
-    if (col == "Shape")
+    if (col == "Shape") {
       paste0(
         "CASE WHEN u.lake_union IS NULL THEN c.\"Shape\" ",
         "ELSE ST_CollectionExtract(ST_MakeValid(ST_Difference(c.\"Shape\", u.lake_union)), 3) ",
         "END AS \"Shape\""
       )
-    else
+    } else {
       sprintf("c.%s", qi(col))
+    }
   })
 
   # Create empty result tables with the correct column schema.
@@ -215,7 +254,7 @@ correct_small_lakes_duckdb <- function(conn,
     fmt_select(qi(all_cols)), vri_bem_tbl
   )
   DBI::dbExecute(conn, sprintf("CREATE OR REPLACE TEMP TABLE %s AS %s", tmp_iraw, empty_schema_sql))
-  DBI::dbExecute(conn, sprintf("CREATE OR REPLACE TEMP TABLE %s AS %s", tmp_diff,  empty_schema_sql))
+  DBI::dbExecute(conn, sprintf("CREATE OR REPLACE TEMP TABLE %s AS %s", tmp_diff, empty_schema_sql))
 
   # Batch loop: each iteration processes batch_size rows.
   if (n_nonlake > 0L) {
@@ -305,8 +344,8 @@ correct_small_lakes_duckdb <- function(conn,
   #     Mirrors the final mutate() in correct_small_lakes().
   # ------------------------------------------------------------------
   set_exprs <- "SDEC_1 = 10"
-  if ("SDEC_2"   %in% non_geom) set_exprs <- paste0(set_exprs, ", SDEC_2 = 0")
-  if ("SDEC_3"   %in% non_geom) set_exprs <- paste0(set_exprs, ", SDEC_3 = 0")
+  if ("SDEC_2" %in% non_geom) set_exprs <- paste0(set_exprs, ", SDEC_2 = 0")
+  if ("SDEC_3" %in% non_geom) set_exprs <- paste0(set_exprs, ", SDEC_3 = 0")
   if ("SITE_M3A" %in% non_geom) set_exprs <- paste0(set_exprs, ", SITE_M3A = NULL")
 
   DBI::dbExecute(conn, sprintf(

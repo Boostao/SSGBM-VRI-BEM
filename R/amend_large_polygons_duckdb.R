@@ -54,7 +54,7 @@ amend_large_polygons_duckdb <- function(conn,
                                         wetlands_tbl = "V_WETLANDS",
                                         bem_tbl      = "V_BEM",
                                         tolerance_m2 = 100,
-                                        result_tbl   = "V_VRIBEM") {
+                                        result_tbl   = vri_bem_tbl) {
 
   stopifnot(inherits(conn, "duckdb_connection"))
   stopifnot(is.character(vri_bem_tbl),  length(vri_bem_tbl)  == 1L)
