@@ -5,7 +5,7 @@
 #'   in RAM.
 #' @param ask Boolean, whether to ask before re-initializing existing tables.
 #' @param bem_dsn data source name for BEM data.
-#' @param bem_dsn data source name for BEM data.
+#' @param pem_dsn data source name for PEM data.
 #' @param temp_dir Optional character path for DuckDB's temp directory (used
 #'   for spill-to-disk during large spatial queries).  Created automatically
 #'   if it does not exist.  When `NULL` (default) the DuckDB default is used.
@@ -22,7 +22,7 @@
 init_db <- function(dbdir = defdb(),
                     ask = interactive(),
                     bem_dsn = NULL,
-                    prem_dsn = NULL) {
+                    pem_dsn = NULL) {
   conn <- init_conn(dbdir)
   init_vri(conn, ask = ask)
   if (!is.null(bem_dsn) || tbl_exists(conn, "BEM")) {
@@ -38,7 +38,7 @@ init_db <- function(dbdir = defdb(),
   init_ccb(conn, ask = ask)
   init_burn(conn, ask = ask)
   init_fire(conn, ask = ask)
-  init_pem(conn, ask = ask, dsn = prem_dsn)
+  init_pem(conn, ask = ask, dsn = pem_dsn)
   init_tsa(conn, ask = ask)
   duckdb::dbDisconnect(conn, shutdown = TRUE)
 }
@@ -167,8 +167,8 @@ init_vri <- function(conn = init_conn(),
 init_bem <- function(conn = init_conn(),
                      ask = interactive(),
                      dsn = NULL,
-                     layer = "BEM",
-                     geom = "geom") {
+                     layer = sf::st_layers(dsn)$name[1],
+                     geom = "shape") {
   if (tbl_exists(conn, "BEM")) {
     logger::log_info("BEM table already exists in database.")
     if (interactive() && ask) {
@@ -210,7 +210,7 @@ init_bem <- function(conn = init_conn(),
     conn,
     sprintf("DESCRIBE SELECT * FROM ST_Read('%s', layer := '%s');", dsn, layer)
   )$column_name |>
-    setdiff(geom)
+    (\(x) x[!tolower(x) %in% tolower(geom)])()
 
   DBI::dbExecute(
     conn,
@@ -469,7 +469,7 @@ init_burn <- function(conn = init_conn(),
 init_pem <- function(conn = init_conn(), 
                      ask = interactive(),
                      dsn = NULL,
-                     layer = "PEM_Mar2026",
+                     layer = sf::st_layers(dsn)$name[1],
                      geom = "geom") {
   init_generic(conn,
                ask,
@@ -543,7 +543,7 @@ init_tsa <- function(conn = init_conn(),
 #' @export
 #' @rdname init
 init_conn <- function(dbdir = defdb(), temp_dir = NULL, threads = NULL, memory_limit = NULL) {
-  cfg <- list()
+  cfg <- list(storage_compatibility_version = "v1.5.0")
   if (!is.null(temp_dir)) {
     dir.create(temp_dir, showWarnings = FALSE, recursive = TRUE)
     cfg$temp_directory <- normalizePath(temp_dir, mustWork = FALSE)
@@ -567,6 +567,13 @@ init_conn <- function(dbdir = defdb(), temp_dir = NULL, threads = NULL, memory_l
     }
   }
   DBI::dbExecute(conn, "INSTALL spatial; LOAD spatial;")
+  # Upgrade the on-disk storage format to v1.5.0 if the database was originally
+  # created with an older DuckDB version (storage v1.0.0).  FORCE CHECKPOINT
+  # rewrites the checkpoint using storage_compatibility_version = "v1.5.0" set
+  # above, which is required to store GEOMETRY values with CRS identifiers.
+  if (!identical(dbdir, ":memory:")) {
+    try(DBI::dbExecute(conn, "FORCE CHECKPOINT;"), silent = TRUE)
+  }
   # Apply thread / memory tuning.  threads defaults to all logical cores;
   # memory_limit must be a DuckDB size string e.g. '8GB' or NULL to leave
   # the DuckDB default (~80 % of RAM) in place.
@@ -712,7 +719,7 @@ meta_proj4 <- function(dsn, layer, geom_f) {
       geom_f
     ))
   } else {
-    g <- which(geom_f == vapply(res$layers[[l]]$geometry_fields, `[[`, character(1), "name"))
+    g <- which(tolower(geom_f) == tolower(vapply(res$layers[[l]]$geometry_fields, `[[`, character(1), "name")))
     if (!length(g)) {
       logger::log_warn(sprintf(
         "Specified geometry field not found in layer for proj4 [%s: %s].",

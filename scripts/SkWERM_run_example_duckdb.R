@@ -2,7 +2,12 @@
 
 devtools::load_all()
 
-conn <- init_conn(temp_dir = "./duckdb_tmp", memory_limit = "14GB", threads = 1L)
+# Initialize database connection and load data into duckdb. 
+# init_db(bem_dsn = "D:/Boostao/SSGBM-data/Skeena_BEM.gdb",
+#         pem_dsn = "D:/Boostao/SSGBM-data/PEM/PEM_Mar2026.gpkg")
+
+conn <- init_conn(temp_dir = "./duckdb_tmp", 
+                  memory_limit = "14GB", threads = 1L)
 
 aoi_wkt <- get_aoi_wkt_from_tsa(conn, aoi_name = "Pacific")
 aoi_wkt <- "MULTIPOLYGON (((1065018 932215.1, 941827.7 932215.1, 941827.7 1016988, 1065018 1016988, 1065018 932215.1)))"
