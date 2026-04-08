@@ -11,9 +11,9 @@ conn <- init_conn(temp_dir = "./duckdb_tmp",
 
 aoi_wkt <- get_aoi_wkt_from_tsa(conn, aoi_name = "Pacific")
 aoi_wkt <- "MULTIPOLYGON (((1065018 932215.1, 941827.7 932215.1, 941827.7 1016988, 1065018 1016988, 1065018 932215.1)))"
+aoi_wkt <- sf::st_read("D:/Boostao/SSGBM-data/Skeena Region Boundary", layer = "Skeena_region")$geometry |> sf::st_transform(3005) |> sf::st_union() |> wk::as_wkt() |> paste0()
 
-
-filtered_views(conn, aoi_wkt, build_spatial_index = FALSE, vri_mem_limit = "6GB")
+filtered_views(conn, aoi_wkt, build_spatial_index = FALSE)
 
 
 # 1a ----
@@ -48,11 +48,11 @@ correct_small_lakes_duckdb(conn,
 
 #wetlands
 duckdb::duckdb_read_csv(conn, "beu_wetland_updates",  "inst/csv/beu_wetland_updates.csv", temporary = TRUE)
-vri_bem_wetlands_corrections_view(conn, beu_wetland_updates = "beu_wetland_updates")
+vri_bem_wetlands_corrections_view(conn, vri_bem = "VRIBEM", beu_wetland_updates = "beu_wetland_updates")
 
 #3a ----
 #Moved earlier in the process (need accurate SLOPE_MOD for update_beu_from_rules_dt)
-elev_rast <- terra::rast("../SSGBM-VRI-BEM-data/DEM_tif/dem.tif")
+elev_rast <- terra::rast("D:/Boostao/SSGBM-data/Skeena_dem/dem.tif")
 
 merge_elevation_duckdb(conn = conn,
                         vri_bem_tbl = "VRIBEM_WETLANDS_CORRECTIONS",
@@ -61,7 +61,7 @@ merge_elevation_duckdb(conn = conn,
 
 #1d ----
 import_rules_to_duckdb(conn,
-  rules_xl = "../SSGBM-VRI-BEM-data/Rules_for_scripting_improved_forested_BEUs_Skeena_07Mar2022.xlsx",
+  rules_xl = "D:/Boostao/SSGBM-data/Rules_for_scripting_improved_forested_BEUs_Skeena_07Mar2022.xlsx",
   tbl_name = "beu_update_rules")
 
 # TODO Maybe create another table instead of updating wetland_corrections table.... 

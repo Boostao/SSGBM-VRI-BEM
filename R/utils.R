@@ -300,6 +300,35 @@ parmapply <- function() {
   }
 }
 
+#' Parse a DuckDB size string to bytes.
+#'
+#' Handles both SI-decimal (`KB`, `MB`, `GB`, `TB`, powers of 1000) and
+#' IEC-binary (`KiB`, `MiB`, `GiB`, `TiB`, powers of 1024) notations.
+#' DuckDB accepts `SET memory_limit = '14GB'` (decimal) but *reports* the
+#' stored value in GiB (binary), e.g. `"13.0 GiB"`.  Correctly parsing both
+#' forms is required to compare user-supplied strings against reported values.
+#'
+#' @param s Character string, e.g. `"14.0 GiB"`, `"6GB"`, `"unlimited"`.
+#' @return Numeric bytes, `Inf` for unlimited / -1, `NA_real_` if unparseable.
+#' @noRd
+parse_duckdb_bytes <- function(s) {
+  s <- trimws(s)
+  if (grepl("^(-1|unlimited)", tolower(s))) return(Inf)
+  # Capture: (number)(SI prefix)(optional 'i')(optional 'B')
+  pat <- "^([0-9.]+)\\s*([KMGTkmgt]?)(i?)B?$"
+  m   <- regexpr(pat, s, perl = TRUE)
+  if (m[1L] == -1L) return(NA_real_)
+  cs  <- attr(m, "capture.start")
+  cl  <- attr(m, "capture.length")
+  n      <- as.numeric(substr(s, cs[1L], cs[1L] + cl[1L] - 1L))
+  unit   <- toupper(substr(s, cs[2L], cs[2L] + cl[2L] - 1L))
+  is_ibi <- cl[3L] > 0L   # 'i' present → IEC binary (1024-based)
+  if (!nzchar(unit)) return(n)
+  base <- if (is_ibi) 1024 else 1000
+  mult <- c("K" = base, "M" = base^2, "G" = base^3, "T" = base^4)
+  n * mult[[unit]]
+}
+
 #'  Create the filtered views from the source table for the analysis
 #'
 #' @param conn A database connection.
@@ -322,15 +351,50 @@ filtered_views <- function(conn = init_conn(), wkt_filter,
   t0_total <- proc.time()[["elapsed"]]
   logger::log_info("filtered_views: starting ({length(tables)} tables, materialize={materialize})")
 
+  # Guard: detect geographic (lat/lon) coordinates and abort with a clear
+  # message.  All database tables are stored in BC Albers (EPSG:3005) with
+  # metre-scale coordinates (~500 000 – 1 600 000).  A WKT whose X or Y values
+  # fall inside the lat/lon range (−180..180 / −90..90) will never overlap those
+  # bboxes and would silently return 0 rows.
+  aoi_bbox <- tryCatch(
+    DBI::dbGetQuery(conn, sprintf(
+      "SELECT ST_XMin(g) AS xmin, ST_XMax(g) AS xmax,
+              ST_YMin(g) AS ymin, ST_YMax(g) AS ymax
+       FROM (SELECT ST_GeomFromText('%s') AS g) _t",
+      wkt_filter
+    )),
+    error = function(e) NULL
+  )
+  if (!is.null(aoi_bbox) && nrow(aoi_bbox) == 1L &&
+      !is.na(aoi_bbox$xmax) && aoi_bbox$xmax <= 181 && aoi_bbox$ymax <= 91) {
+    stop(
+      "filtered_views: AOI bounding box (",
+      round(aoi_bbox$xmin, 2), ", ", round(aoi_bbox$ymin, 2), ", ",
+      round(aoi_bbox$xmax, 2), ", ", round(aoi_bbox$ymax, 2),
+      ") looks like geographic (lat/lon) coordinates. ",
+      "Database tables are stored in BC Albers (EPSG:3005). ",
+      "Transform your AOI first, e.g.:\n",
+      "  sf::st_read(...) |> sf::st_transform(3005) |> sf::st_union() |> wk::as_wkt() |> paste0()"
+    )
+  }
+
   DBI::dbExecute(conn, sprintf("SET VARIABLE AOI = (SELECT ST_GeomFromText('%s'));", wkt_filter))
   # Inline the WKT literal for CREATE TABLE so the DuckDB query planner can
   # extract a bbox from the constant geometry and use any RTREE index on the
   # source table.  getvariable() is opaque to the planner; a literal is not.
   aoi_literal <- sprintf("ST_GeomFromText('%s')", wkt_filter)
 
-  # NOTE: do NOT use preserve_insertion_order=false here. It interacts with
-  # DuckDB's CHECKPOINT + spatial && operator to silently return 0 matching rows
-  # for source tables that were written before the last checkpoint.
+  # NOTE: use ST_Intersects rather than the && bounding-box operator for the
+  # WHERE predicate.  The && operator has a known interaction with DuckDB's
+  # CHECKPOINT routine that can silently return 0 matching rows for source
+  # tables whose RTREE index pages were written before the last checkpoint
+  # (observed with DuckDB 1.5.x on large persistent databases).
+  # ST_Intersects is pushed through the RTREE index by the DuckDB ≥1.0
+  # optimizer and does not exhibit that behaviour.
+  #
+  # NOTE: preserve_insertion_order=false is safe here (used for large tables
+  # below) because we use ST_Intersects, not &&.  The 0-row interaction only
+  # occurred when && + CHECKPOINT were combined with that setting.
 
   for (t in tables) {
     t0 <- proc.time()[["elapsed"]]
@@ -385,7 +449,15 @@ filtered_views <- function(conn = init_conn(), wkt_filter,
           )$value,
           error = function(e) NULL
         )
-        if (!is.null(cur_limit)) {
+        # Only raise the memory limit, never lower it.  vri_mem_limit is a
+        # floor (useful when the connection was opened with a low default), but
+        # if the connection already has a higher limit (e.g. 14GB) lowering it
+        # to vri_mem_limit would leave almost no headroom once the earlier
+        # V_* tables have filled the buffer pool.
+        cur_bytes <- if (!is.null(cur_limit)) parse_duckdb_bytes(cur_limit) else NA_real_
+        vri_bytes <- parse_duckdb_bytes(vri_mem_limit)
+        should_raise <- isTRUE(!is.na(cur_bytes) && !is.na(vri_bytes) && vri_bytes > cur_bytes)
+        if (should_raise) {
           try(DBI::dbExecute(conn, sprintf("SET memory_limit = '%s';", vri_mem_limit)),
             silent = TRUE
           )
@@ -396,11 +468,35 @@ filtered_views <- function(conn = init_conn(), wkt_filter,
             add = TRUE
           )
         }
-        logger::log_info("filtered_views: {t} has ~{n_src_est} rows, raising memory_limit to {vri_mem_limit} for this table")
+        # Disabling insertion-order preservation frees the large sort-buffer
+        # DuckDB normally allocates to preserve row order during CTAS, cutting
+        # peak memory use significantly on multi-million-row sources.
+        # Safe here because we use ST_Intersects (not &&), so the CHECKPOINT
+        # interaction that caused 0-row results no longer applies.
+        cur_pio <- tryCatch(
+          DBI::dbGetQuery(
+            conn,
+            "SELECT current_setting('preserve_insertion_order') AS v"
+          )$v,
+          error = function(e) NULL
+        )
+        try(DBI::dbExecute(conn, "SET preserve_insertion_order = false;"), silent = TRUE)
+        on.exit(
+          try(DBI::dbExecute(conn,
+            sprintf("SET preserve_insertion_order = %s;",
+                    if (!is.null(cur_pio) && tolower(cur_pio) == "false") "false" else "true")
+          ), silent = TRUE),
+          add = TRUE
+        )
+        if (should_raise) {
+          logger::log_info("filtered_views: {t} has ~{n_src_est} rows, raising memory_limit to {vri_mem_limit} and disabling preserve_insertion_order for this table")
+        } else {
+          logger::log_info("filtered_views: {t} has ~{n_src_est} rows, disabling preserve_insertion_order (memory_limit kept at {if (!is.null(cur_limit)) cur_limit else 'default'})")
+        }
       }
 
       DBI::dbExecute(conn, sprintf(
-        "CREATE TABLE %s AS (SELECT * FROM %s WHERE Shape && %s);",
+        "CREATE TABLE %s AS (SELECT * FROM %s WHERE ST_Intersects(Shape, %s));",
         v_name, t, aoi_literal
       ))
       n_rows <- DBI::dbGetQuery(conn, sprintf("SELECT count(*) AS n FROM %s;", v_name))$n
@@ -423,7 +519,7 @@ filtered_views <- function(conn = init_conn(), wkt_filter,
       logger::log_info("filtered_views: {t} -> {v_name} materialized ({n_rows} rows, {round(proc.time()[['elapsed']] - t0, 1)}s)")
     } else {
       DBI::dbExecute(conn, sprintf(
-        "CREATE OR REPLACE TEMP VIEW %s AS (SELECT * FROM %s WHERE Shape && getvariable('AOI'));",
+        "CREATE OR REPLACE TEMP VIEW %s AS (SELECT * FROM %s WHERE ST_Intersects(Shape, getvariable('AOI')));",
         v_name, t
       ))
       logger::log_info("filtered_views: {t} -> {v_name} view created ({round(proc.time()[['elapsed']] - t0, 1)}s)")

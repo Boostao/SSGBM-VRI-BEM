@@ -14,6 +14,11 @@
 #' @param memory_limit Optional DuckDB memory limit string, e.g. `"8GB"`.
 #'   When `NULL` (default) the DuckDB default (~80\% of RAM) applies.  Set to
 #'   ~70\% of available RAM for large AOIs to leave headroom for R and terra.
+#' @param force_unlock Logical. When `TRUE`, and DuckDB reports that the
+#'   database file is locked by another process with a specific PID, terminate
+#'   that process and retry opening the database once. This is intentionally
+#'   forceful and should only be used when it is safe to kill the locking
+#'   process. Default `FALSE`.
 #' @export
 #' @import duckdb
 #' @details This needs to be run once to create the database and load the
@@ -222,7 +227,27 @@ init_bem <- function(conn = init_conn(),
         paste(names(bem_vars), bem_vars) |> trimws(), collapse = ","
       ), bem_geom, dsn, layer)
   )
-
+  # Deduplicate by TEIS_ID: the source GDB/shapefile can contain multiple
+  # features with the same TEIS_ID.  Keep only the first occurrence per ID
+  # (minimum rowid) so that downstream joins on V_BEM produce clean one-to-one
+  # matches.
+  n_dup <- DBI::dbGetQuery(
+    conn,
+    "SELECT count(*) AS n FROM (SELECT TEIS_ID FROM BEM GROUP BY TEIS_ID HAVING count(*) > 1)"
+  )$n
+  if (n_dup > 0L) {
+    warning(
+      sprintf(
+        "init_bem: %d duplicate TEIS_ID(s) found in source data \u2014 keeping first occurrence per ID.",
+        n_dup
+      ),
+      call. = FALSE
+    )
+    DBI::dbExecute(
+      conn,
+      "DELETE FROM BEM WHERE rowid NOT IN (SELECT MIN(rowid) FROM BEM GROUP BY TEIS_ID)"
+    )
+  }
   logger::log_info("Creating BEM spatial index.")
 
   DBI::dbExecute(conn, "DROP INDEX IF EXISTS BEM_IDX;")
@@ -540,40 +565,89 @@ init_tsa <- function(conn = init_conn(),
   }
 }
 
+#' @noRd
+.open_duckdb_connection <- function(dbdir, cfg) {
+  try(
+    duckdb::dbConnect(duckdb::duckdb(dbdir = dbdir, config = cfg)),
+    silent = TRUE
+  )
+}
+
+#' @noRd
+.duckdb_locking_pid <- function(msg) {
+  m <- regexec("\\(PID ([0-9]+)\\)", msg)
+  parts <- regmatches(msg, m)[[1L]]
+  if (length(parts) < 2L) return(NA_integer_)
+  as.integer(parts[2L])
+}
+
+#' @noRd
+.terminate_pid <- function(pid) {
+  if (is.na(pid) || length(pid) != 1L) return(FALSE)
+  if (.Platform$OS.type == "windows") {
+    status <- tryCatch(
+      suppressWarnings(system2(
+        "taskkill", c("/PID", as.character(pid), "/F", "/T"),
+        stdout = FALSE, stderr = FALSE
+      )),
+      error = function(e) 1L
+    )
+  } else {
+    status <- tryCatch(
+      suppressWarnings(system2(
+        "kill", c("-9", as.character(pid)), stdout = FALSE, stderr = FALSE
+      )),
+      error = function(e) 1L
+    )
+  }
+  is.numeric(status) && identical(as.integer(status), 0L)
+}
+
 #' @export
 #' @rdname init
-init_conn <- function(dbdir = defdb(), temp_dir = NULL, threads = NULL, memory_limit = NULL) {
+init_conn <- function(dbdir = defdb(), temp_dir = NULL, threads = NULL, memory_limit = NULL,
+                      force_unlock = FALSE) {
   cfg <- list(storage_compatibility_version = "v1.5.0")
   if (!is.null(temp_dir)) {
     dir.create(temp_dir, showWarnings = FALSE, recursive = TRUE)
     cfg$temp_directory <- normalizePath(temp_dir, mustWork = FALSE)
   }
-  conn <- try(
-    duckdb::dbConnect(duckdb::duckdb(dbdir = dbdir, config = cfg)),
-    silent = TRUE
-  )
+  conn <- .open_duckdb_connection(dbdir, cfg)
   if (inherits(conn, "try-error")) {
-    if (grepl("Missing Extension", conditionMessage(attr(conn, "condition")))) {
+    msg <- conditionMessage(attr(conn, "condition"))
+    if (grepl("Missing Extension", msg)) {
       if (file.exists(paste0(dbdir, ".wal"))) {
         answer <- readline("Stale .wal lock file detected. Delete it? (y/n/c): ")
         if (tolower(answer) %in% c("y", "yes")) {
           unlink(paste0(dbdir, ".wal"))
-          conn <- duckdb::dbConnect(duckdb::duckdb(dbdir = dbdir, config = cfg))
+          conn <- .open_duckdb_connection(dbdir, cfg)
         } else {
           logger::log_error("Could not create a connection to the database.")
           return(invisible())
         }
       }
     }
+    if (inherits(conn, "try-error") && isTRUE(force_unlock)) {
+      pid <- .duckdb_locking_pid(msg)
+      if (!is.na(pid)) {
+        logger::log_warn(
+          "init_conn: database file is locked by PID {pid}; terminating it because force_unlock=TRUE"
+        )
+        if (.terminate_pid(pid)) {
+          conn <- .open_duckdb_connection(dbdir, cfg)
+        } else {
+          stop(
+            sprintf("init_conn: failed to terminate locking process PID %d for %s", pid, dbdir),
+            call. = FALSE
+          )
+        }
+      }
+    }
+  }
+  if (inherits(conn, "try-error")) {
+    stop(conditionMessage(attr(conn, "condition")), call. = FALSE)
   }
   DBI::dbExecute(conn, "INSTALL spatial; LOAD spatial;")
-  # Upgrade the on-disk storage format to v1.5.0 if the database was originally
-  # created with an older DuckDB version (storage v1.0.0).  FORCE CHECKPOINT
-  # rewrites the checkpoint using storage_compatibility_version = "v1.5.0" set
-  # above, which is required to store GEOMETRY values with CRS identifiers.
-  if (!identical(dbdir, ":memory:")) {
-    try(DBI::dbExecute(conn, "FORCE CHECKPOINT;"), silent = TRUE)
-  }
   # Apply thread / memory tuning.  threads defaults to all logical cores;
   # memory_limit must be a DuckDB size string e.g. '8GB' or NULL to leave
   # the DuckDB default (~80 % of RAM) in place.

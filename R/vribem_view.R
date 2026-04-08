@@ -19,7 +19,38 @@ vribem_view <- function(conn, validate_intersect = FALSE) {
     HAVING COUNT(1) > 1
   )")
   if (res$NB > 0) {
-    logger::log_error("Duplicate values of TEIS_ID found in BEM table. Check the source and reload with `init_bem()`.")
+    warning(
+      sprintf(
+        "vribem_view: %d duplicate TEIS_ID(s) found in V_BEM — deduplicating in-place (keeping first occurrence). Consider reloading BEM with `init_bem()`.",
+        res$NB
+      ),
+      call. = FALSE
+    )
+    # V_BEM is a persistent TABLE when filtered_views() ran with materialize=TRUE
+    # (the default).  For the materialize=FALSE view case we replace the view
+    # with a one-time deduplicated TEMP TABLE so the join below is always clean.
+    # Check views first: a TEMP VIEW shadows a base TABLE of the same name, so
+    # duckdb_tables() would still report the base TABLE as present even when a
+    # VIEW is actually in scope.
+    is_view <- nrow(DBI::dbGetQuery(
+      conn,
+      "SELECT 1 FROM duckdb_views() WHERE view_name = 'V_BEM'"
+    )) > 0L
+    if (!is_view) {
+      DBI::dbExecute(
+        conn,
+        "DELETE FROM V_BEM WHERE rowid NOT IN (SELECT MIN(rowid) FROM V_BEM GROUP BY TEIS_ID)"
+      )
+    } else {
+      # View path: materialise a deduplicated copy, drop the view, expose it
+      # under the same name so all downstream references still work.
+      DBI::dbExecute(conn,
+        "CREATE TEMP TABLE _v_bem_dedup AS
+         SELECT * FROM V_BEM
+         QUALIFY ROW_NUMBER() OVER (PARTITION BY TEIS_ID ORDER BY (SELECT NULL)) = 1")
+      DBI::dbExecute(conn, "DROP VIEW IF EXISTS V_BEM")
+      DBI::dbExecute(conn, "ALTER TABLE _v_bem_dedup RENAME TO V_BEM")
+    }
   }
 
   vri_columns <- DBI::dbGetQuery(conn, "PRAGMA table_info('VRI')")$name |> setdiff("Shape")
