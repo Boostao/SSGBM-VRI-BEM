@@ -82,15 +82,16 @@ fdl <- st_read("Forest_Disturbance")
 
 vri_bem <- merge_geometry(vri_bem, fdl, tolerance = units::as_units(10, "m2"))
 
+# We will merge CCB instead of FDL since FDL is not available to us.
 merge_geometry_duckdb(conn = conn,
-  x_tbl = "VRIBEM_WETLANDS_CORRECTIONS",
-  y_tbl = "V_FDL",  #TODO Create this table or a mock in duckdb
+  x_tbl = "VRIBEM",
+  y_tbl = "V_CCB",  #TODO Create table V_FDL or a mock in duckdb
   tolerance_m2 = 10,
   result_tbl = "VRIBEM_FDL")
 
-# Merge fire perimeters: adds percent_burned and most_recent_fire in-place to VRIBEM_CCB.
+# Merge fire perimeters: adds percent_burned and most_recent_fire in-place to VRIBEM.
 merge_fire_perimeters_duckdb(conn,
-                             vri_bem_tbl = "VRIBEM_CCB",
+                             vri_bem_tbl = "VRIBEM_FDL",
                              fire_tbl    = "V_FIRE")
 
 

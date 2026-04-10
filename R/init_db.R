@@ -518,7 +518,8 @@ init_fire <- function(conn = init_conn(),
                layer,
                geom,
                recordid = "22c7cb44-1463-48f7-8e47-88857f207702",
-               tablename = "FIRE")
+               tablename = "FIRE", 
+               .include = c("FIRE_YEAR"))
 }
 
 #' @param tsa_name Character vector.
