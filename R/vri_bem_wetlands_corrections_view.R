@@ -1,4 +1,4 @@
-vri_bem_wetlands_corrections_view <- function(conn, vri_bem = "VRIBEM_CORRECTIONS", wetlands = "V_WETLANDS", beu_wetland_updates = "beu_wetland_updates") {
+vri_bem_wetlands_corrections_view <- function(conn, vri_bem = "VRIBEM_CORRECTIONS", wetlands = "V_WETLANDS", beu_wetland_updates = "beu_wetland_updates", result_tbl = vri_bem) {
   
   # validate inputs ----
   validate_views_column_names(conn = conn, 
@@ -17,7 +17,7 @@ vri_bem_wetlands_corrections_view <- function(conn, vri_bem = "VRIBEM_CORRECTION
                                                  "MEAN_SLOPE", "BCLCS_LV_4"))
   
   # output table name
-  tbl_name <- "VRIBEM_WETLANDS_CORRECTIONS"
+  tbl_name <- result_tbl
 
   # Ensure the wetlands source is materialized with an RTREE index so the
   # spatial aggregation below can use the index.  If `filtered_views()` was

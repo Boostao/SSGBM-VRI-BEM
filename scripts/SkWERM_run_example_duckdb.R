@@ -55,9 +55,9 @@ vri_bem_wetlands_corrections_view(conn, vri_bem = "VRIBEM", beu_wetland_updates 
 elev_rast <- terra::rast("D:/Boostao/SSGBM-data/Skeena_dem/dem.tif")
 
 merge_elevation_duckdb(conn = conn,
-                        vri_bem_tbl = "VRIBEM_WETLANDS_CORRECTIONS",
-                        elev_raster = elev_rast,
-                        elevation_threshold = 1400)
+                       vri_bem_tbl = "VRIBEM",
+                       elev_raster = elev_rast,
+                       elevation_threshold = 1400)
 
 #1d ----
 import_rules_to_duckdb(conn,
@@ -65,12 +65,12 @@ import_rules_to_duckdb(conn,
   tbl_name = "beu_update_rules")
 
 # TODO Maybe create another table instead of updating wetland_corrections table.... 
-vribem_beu_rules_update(conn, 
-  vri_bem = "VRIBEM_WETLANDS_CORRECTIONS",
+vribem_beu_rules_update(conn,
+  vri_bem = "VRIBEM",
   rules_tbl = "beu_update_rules")
 
 #2 ----
-unique_eco <- create_unique_ecosystem_dt(conn = conn, vri_bem =  "VRIBEM_WETLANDS_CORRECTIONS")
+unique_eco <- create_unique_ecosystem_dt(conn = conn, vri_bem =  "VRIBEM")
 
 fwrite(unique_eco, file = "../unique_ecosystem.csv")
 

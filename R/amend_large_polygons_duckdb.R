@@ -118,11 +118,6 @@ amend_large_polygons_duckdb <- function(conn,
     ))) > 0L
   }
 
-  vribem_non_geom <- vribem_cols[vribem_cols != "Shape"]
-
-  # Explicit SELECT of all vri_bem_tbl non-geom cols qualified with alias v
-  orig_non_geom_select <- paste(sprintf("v.%s", qi(vribem_non_geom)), collapse = ",\n      ")
-
   # ------------------------------------------------------------------
   # Temp table names (prefixed to avoid collisions across calls)
   # ------------------------------------------------------------------
@@ -221,8 +216,14 @@ amend_large_polygons_duckdb <- function(conn,
       )
     }
     vri_bem_tbl <- tmp_src
+    src_secs <- round(proc.time()[["elapsed"]] - t_src, 1)
     logger::log_info(
-      "amend_large_polygons_duckdb: materialised to {tmp_src} ({n_src} rows, {round(proc.time()[['elapsed']] - t_src, 1)}s)"
+      sprintf(
+        "amend_large_polygons_duckdb: materialised to %s (%d rows, %.1fs)",
+        tmp_src,
+        n_src,
+        src_secs
+      )
     )
   }
 
@@ -235,8 +236,9 @@ amend_large_polygons_duckdb <- function(conn,
      SELECT * FROM %s WHERE ST_Area(Shape) > 35000000;",
     tmp_large, vri_bem_tbl
   ))
+  step1_secs <- round(proc.time()[["elapsed"]] - t1, 1)
   logger::log_info(
-    "amend_large_polygons_duckdb: step 1 – large polygons extracted ({round(proc.time()[['elapsed']] - t1, 1)}s)"
+    sprintf("amend_large_polygons_duckdb: step 1 – large polygons extracted (%.1fs)", step1_secs)
   )
 
   # ------------------------------------------------------------------
@@ -890,19 +892,40 @@ amend_large_polygons_duckdb <- function(conn,
   # is MUCH faster than a correlated NOT EXISTS that forces DuckDB to buffer
   # the full wide result (including large VRI_Shape blobs) in RAM before
   # committing.  The result is a small integer table (<< 1 MB).
+  #
+  # Build a disposable RTREE on the source table here. Earlier in the function
+  # the source RTREE is dropped to keep memory available for overlay work, but
+  # by step 11a those large overlay indexes are gone. Rebuilding the source
+  # RTREE at this point allows the 90 XL polygons to probe the source footprint
+  # efficiently instead of forcing a very broad Shape scan.
   # ------------------------------------------------------------------
   tmp_xl_rowids <- paste0(pfx, "xlrowids")
+  src_step11_idx <- paste0(pfx, "src_step11_rtree")
+  src_step11_idx_created <- FALSE
   try(DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s;", tmp_xl_rowids)), silent = TRUE)
+  tryCatch(
+    {
+      DBI::dbExecute(conn, sprintf(
+        "CREATE INDEX %s ON %s USING RTREE (Shape);",
+        src_step11_idx, vri_bem_tbl
+      ))
+      src_step11_idx_created <- TRUE
+    },
+    error = function(e) logger::log_warn(
+      "amend_large_polygons_duckdb: late RTREE on {vri_bem_tbl} failed: {conditionMessage(e)}"
+    )
+  )
   DBI::dbExecute(conn, sprintf(
     "CREATE OR REPLACE TABLE %s AS
      SELECT DISTINCT v.rowid AS src_rowid
-     FROM %s v
-     JOIN %s x ON ST_Intersects(x.Shape, v.Shape);",
-    tmp_xl_rowids, vri_bem_tbl, tmp_vrixl
+     FROM %s x
+     JOIN %s v ON ST_Intersects(v.Shape, x.Shape);",
+    tmp_xl_rowids, tmp_vrixl, vri_bem_tbl
   ))
   try(DBI::dbExecute(conn, "CHECKPOINT;"), silent = TRUE)
+  step11a_secs <- round(proc.time()[["elapsed"]] - t1, 1)
   logger::log_info(
-    "amend_large_polygons_duckdb: step 11a – XL rowids precomputed ({round(proc.time()[['elapsed']] - t1, 1)}s)"
+    sprintf("amend_large_polygons_duckdb: step 11a – XL rowids precomputed (%.1fs)", step11a_secs)
   )
 
   # ------------------------------------------------------------------
@@ -926,15 +949,20 @@ amend_large_polygons_duckdb <- function(conn,
   ))
   try(DBI::dbExecute(conn, "CHECKPOINT;"), silent = TRUE)
   # vrixl, xlfinal, and the precomputed rowid table are no longer needed
+  if (src_step11_idx_created) {
+    try(DBI::dbExecute(conn, sprintf("DROP INDEX IF EXISTS %s;", src_step11_idx)), silent = TRUE)
+  }
   try(DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s;", tmp_vrixl)),    silent = TRUE)
   try(DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s;", tmp_xlfinal)),  silent = TRUE)
   try(DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s;", tmp_xl_rowids)), silent = TRUE)
+  step1112_secs <- round(proc.time()[["elapsed"]] - t2, 1)
   logger::log_info(
-    "amend_large_polygons_duckdb: step 11+12 – XL erased, result written ({round(proc.time()[['elapsed']] - t2, 1)}s)"
+    sprintf("amend_large_polygons_duckdb: step 11+12 – XL erased, result written (%.1fs)", step1112_secs)
   )
 
+  total_secs <- round(proc.time()[["elapsed"]] - t0, 1)
   logger::log_info(
-    "amend_large_polygons_duckdb: done (total {round(proc.time()[['elapsed']] - t0, 1)}s)"
+    sprintf("amend_large_polygons_duckdb: done (total %.1fs)", total_secs)
   )
 
   invisible(result_tbl)
