@@ -9,9 +9,9 @@ devtools::load_all()
 conn <- init_conn(temp_dir = "./duckdb_tmp", 
                   memory_limit = "14GB", threads = 1L)
 
-aoi_wkt <- get_aoi_wkt_from_tsa(conn, aoi_name = "Pacific")
+#aoi_wkt <- get_aoi_wkt_from_tsa(conn, aoi_name = "Pacific")
 aoi_wkt <- "MULTIPOLYGON (((1065018 932215.1, 941827.7 932215.1, 941827.7 1016988, 1065018 1016988, 1065018 932215.1)))"
-aoi_wkt <- sf::st_read("D:/Boostao/SSGBM-data/Skeena Region Boundary", layer = "Skeena_region")$geometry |> sf::st_transform(3005) |> sf::st_union() |> wk::as_wkt() |> paste0()
+#aoi_wkt <- sf::st_read("D:/Boostao/SSGBM-data/Skeena Region Boundary", layer = "Skeena_region")$geometry |> sf::st_transform(3005) |> sf::st_union() |> wk::as_wkt() |> paste0()
 
 filtered_views(conn, aoi_wkt, build_spatial_index = FALSE)
 
@@ -113,13 +113,14 @@ find_crown_area_dominant_values_duckdb(conn, vri_bem_tbl = "VRIBEM_FDL")
 #######################
 #Create RRM ecosystem and assign values for moose
 #######################
-moose_export_dt <- create_RRM_ecosystem_moose(vri_bem = vri_bem)
-
+moose_export_dt <- create_RRM_ecosystem_moose_duckdb(conn, vri_bem_tbl = "VRIBEM_FDL")
+# moose_export_dt <- create_RRM_ecosystem_moose(vri_bem = vri_bem)
+setDT(moose_export_dt) #TODO move into create_RRM_ecosystem_moose_duckdb
 RSI_BGC_BEU_moose <- unique(moose_export_dt[,list(BGC_ZONE,BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC)])[order(BGC_ZONE,BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC)]
 data.table::setkey(RSI_BGC_BEU_moose, BGC_ZONE,BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC)
 
-template_dir_moose <- "../SkWERM/MOOSE/RRM/"
-rsi_source_moose <- "../SkWERM/MOOSE/RRM/RSI_SOURCE of Ratings for Initial Attributes Tab in Models_MALAN_Skeena_15Jan2025.xlsx"
+template_dir_moose <- "D:/Boostao/SSGBM-data/SkWERM/MOOSE/RRM/RRM_inputs"
+rsi_source_moose <- "D:/Boostao/SSGBM-data/SkWERM/MOOSE/RRM/RRM_inputs/RSI_SOURCE of Ratings for Initial Attributes Tab in Models_MALAN_Skeena_15May2023.xlsx"
 templates_moose <- list.files(template_dir_moose, "template.xlsx", full.names = TRUE)
 
 rsi_rating_moose <- readxl::read_xlsx(rsi_source_moose, grep("rating", readxl::excel_sheets(path = rsi_source_moose), value = TRUE, ignore.case = TRUE)[1])
@@ -163,11 +164,12 @@ data.table::set(moose_export_dt, j = "MALAN_WST_RSI", value = MALAN_WST_6C[[1]]$
 ###
 #Final step: assign WHR ratings back to spatial map
 ###
-Moose_SkWERM <- merge_rrm_on_vri(vri_bem=vri_bem, rrm_dt=moose_export_dt, animal="moose")
+setnames(moose_export_dt, old = "Crown_Moose", new = "Crown_all")
+Moose_SkWERM <- merge_rrm_on_vri_duckdb(conn, vri_bem_tbl = "VRIBEM_FDL", rrm_dt = moose_export_dt, animal = "moose", result_tbl = "SkWERM_MOOSE")
+#Moose_SkWERM <- merge_rrm_on_vri(vri_bem=vri_bem, rrm_dt=moose_export_dt, animal="moose")
 
 #Check for mismatches
-check <- filter(Moose_SkWERM,rrm_merge_ind == "FALSE") %>%
-  dplyr::select(BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC_S1, BEUMC_S2, BEUMC_S3, SLOPE_MOD, SITE_M3A, SNOW_CODE, ABOVE_ELEV_THOLD, CROWN_ALL_1, CROWN_ALL_2, CROWN_ALL_3, STRCT_S1, STAND_A1)
+check <- DBI::dbGetQuery(conn, "SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC_S1, BEUMC_S2, BEUMC_S3, SLOPE_MOD, SITE_M3A, SNOW_CODE, ABOVE_ELEV_THOLD, CROWN_ALL_1, CROWN_ALL_2, CROWN_ALL_3, STRCT_S1, STAND_A1 FROM SkWERM_MOOSE WHERE rrm_merge_ind = FALSE") 
 
 #Mismatches should only be for missing LUT ecosystems. If there are more than that, double check process
 if(nrow(check)>0){
@@ -177,7 +179,7 @@ if(nrow(check)>0){
 #######################
 #Create RRM ecosystem and assign values for grizzly
 #######################
-bear_export_dt <- create_RRM_ecosystem_bear(vri_bem = vri_bem)
+bear_export_dt <- create_RRM_ecosystem_bear_duckdb(conn, vri_bem_tbl = "VRIBEM_FDL")
 
 RSI_BGC_BEU_bear <- unique(bear_export_dt[,list(BGC_ZONE,BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC)])[order(BGC_ZONE,BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC)]
 data.table::setkey(RSI_BGC_BEU_bear, BGC_ZONE,BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC)
