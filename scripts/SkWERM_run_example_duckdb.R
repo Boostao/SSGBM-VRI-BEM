@@ -117,6 +117,10 @@ moose_export_dt <- create_RRM_ecosystem_moose_duckdb(conn, vri_bem_tbl = "VRIBEM
 # moose_export_dt <- create_RRM_ecosystem_moose(vri_bem = vri_bem)
 setDT(moose_export_dt) #TODO move into create_RRM_ecosystem_moose_duckdb
 RSI_BGC_BEU_moose <- unique(moose_export_dt[,list(BGC_ZONE,BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC)])[order(BGC_ZONE,BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC)]
+# Trying to avoid issues with NA values in join
+set(RSI_BGC_BEU_moose, j = "BGC_VRT", value = fifelse(is.na(RSI_BGC_BEU_moose$BGC_VRT), "", RSI_BGC_BEU_moose$BGC_VRT))
+set(RSI_BGC_BEU_moose, j = "BGC_PHASE", value = fifelse(is.na(RSI_BGC_BEU_moose$BGC_PHASE), "", RSI_BGC_BEU_moose$BGC_PHASE))
+
 data.table::setkey(RSI_BGC_BEU_moose, BGC_ZONE,BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC)
 
 template_dir_moose <- "D:/Boostao/SSGBM-data/SkWERM/MOOSE/RRM/RRM_inputs"
@@ -125,6 +129,9 @@ templates_moose <- list.files(template_dir_moose, "template.xlsx", full.names = 
 
 rsi_rating_moose <- readxl::read_xlsx(rsi_source_moose, grep("rating", readxl::excel_sheets(path = rsi_source_moose), value = TRUE, ignore.case = TRUE)[1])
 data.table::setDT(rsi_rating_moose)
+# Trying to avoid issues with NA values in join
+set(rsi_rating_moose, j = "BGC_VRT", value = fifelse(is.na(rsi_rating_moose$BGC_VRT), "", rsi_rating_moose$BGC_VRT))
+set(rsi_rating_moose, j = "BGC_PHASE", value = fifelse(is.na(rsi_rating_moose$BGC_PHASE), "", rsi_rating_moose$BGC_PHASE))
 data.table::setkey(rsi_rating_moose, BGC_ZONE,BGC_SUBZON, BGC_VRT, BGC_PHASE, BEU_Mapcode)
 
 moose_no_match <- RSI_BGC_BEU_moose[!rsi_rating_moose][,data.table::key(RSI_BGC_BEU_moose), with = FALSE]
