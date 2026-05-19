@@ -29,3 +29,5 @@ rbind(fc[SDEC_1 > 0, .N , by = .(BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC
 aoi <- st_read(dsn = "../SSGBM-VRI-BEM-data/CodeWithUs.gdb", layer = "code_with_us_aoi", quiet = TRUE)
 plot(aoi$SHAPE)
 plot(vri_bem[which(is.na(vri_bem$TEIS_ID)), "Shape"], add = T)
+
+read_ccb()

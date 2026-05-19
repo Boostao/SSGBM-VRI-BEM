@@ -616,6 +616,13 @@ resolve_resource <- function(x) {
   } else {
     file <- file.path(path, basename(x$url))
   }
+
+  # If the path is a plain directory (not .gdb), look for a .gdb inside it.
+  if (dir.exists(file) && !grepl("\\.gdb$", file, ignore.case = TRUE)) {
+    gdb <- Sys.glob(file.path(file, "*.gdb"))
+    if (length(gdb)) file <- gdb[1]
+  }
+
   file
 }
 
@@ -713,9 +720,75 @@ meta_proj4 <- function(dsn, layer, geom_f) {
 
 
 #' @noRd
-collect_geojson <- function(x, ...) {
+collect_geojson_start_indexes <- function(number_of_records, chunk_size = 10000L) {
+  if (!is.numeric(number_of_records) || length(number_of_records) != 1L || is.na(number_of_records)) {
+    stop("number_of_records must be a single non-missing numeric value.", call. = FALSE)
+  }
+
+  if (!is.numeric(chunk_size) || length(chunk_size) != 1L || is.na(chunk_size) || chunk_size < 1) {
+    stop("chunk_size must be a single positive numeric value.", call. = FALSE)
+  }
+
+  number_of_records <- as.integer(number_of_records)
+  chunk_size <- as.integer(chunk_size)
+
+  if (number_of_records <= 0L) {
+    return(0L)
+  }
+
+  seq.int(from = 0L, to = max(number_of_records - 1L, 0L), by = chunk_size)
+}
+
+
+#' @noRd
+collect_geojson_batches <- function(x, batch_size = 25L) {
+  if (!is.numeric(batch_size) || length(batch_size) != 1L || is.na(batch_size) || batch_size < 1) {
+    stop("batch_size must be a single positive numeric value.", call. = FALSE)
+  }
+
+  split(x, ceiling(seq_along(x) / as.integer(batch_size)))
+}
+
+
+#' @noRd
+collect_geojson_retry_tracker <- function(paths) {
+  stats::setNames(integer(length(paths)), paths)
+}
+
+
+#' @noRd
+collect_geojson_readable <- function(path) {
+  if (!file.exists(path)) {
+    return(FALSE)
+  }
+
+  info <- file.info(path)
+  if (is.na(info$size) || info$size <= 0) {
+    return(FALSE)
+  }
+
+  tryCatch({
+    sf::st_layers(path)
+    TRUE
+  }, error = function(e) FALSE)
+}
+
+
+#' @noRd
+collect_geojson <- function(x, sort_field = NULL, max_retries = 3L, ...) {
   x$query_list$CQL_FILTER <- bcdata:::finalize_cql(x$query_list$CQL_FILTER)
   query_list <- x$query_list
+  current_sort <- query_list$sortBy
+  if (is.null(current_sort)) {
+    current_sort <- ""
+  }
+  if (!is.null(sort_field) && !nzchar(current_sort)) {
+    query_list$sortBy <- sort_field
+  }
+  if (!is.numeric(max_retries) || length(max_retries) != 1L || is.na(max_retries) || max_retries < 1) {
+    stop("max_retries must be a single positive numeric value.", call. = FALSE)
+  }
+  max_retries <- as.integer(max_retries)
   cli <- x$cli
   ## Determine total number of records for pagination purposes
   number_of_records <- bcdata:::bcdc_number_wfs_records(query_list, cli)
@@ -725,7 +798,7 @@ collect_geojson <- function(x, ...) {
       \(x) paste0(names(x), "=", URLencode(x, reserved = TRUE), collapse = "&")
     }()
   if (number_of_records > 10000) {
-    si <- c(0, seq_len(number_of_records %/% 10000) * 10000)
+    si <- collect_geojson_start_indexes(number_of_records)
     urls <- "https://openmaps.gov.bc.ca/geo/pub/wfs?startIndex=%s&count=10000" |>
       sprintf(si) |>
       paste(target, sep = "&")
@@ -768,27 +841,67 @@ collect_geojson <- function(x, ...) {
 
   destfiles <- tempfile(rep("bcdatageo", length(urls)), fileext = ".geojson")
 
-  alldld <- FALSE
-  allurls <- urls
-  alldestfiles <- destfiles
-  while (!alldld) {
-    res <- curl::multi_download(
-      urls = allurls,
-      destfiles = alldestfiles,
-      resume = FALSE,
-      progress = TRUE,
-      multiplex = TRUE,
-      httpheader = curl:::format_request_headers(
-        list(
-          "Accept-Encoding" = "gzip, deflate",
-          "Accept" = "application/json",
-          "User-Agent" = "https://github.com/bcgov/bcdata"
+  url_batches <- collect_geojson_batches(urls)
+  destfile_batches <- collect_geojson_batches(destfiles)
+  retry_counts <- collect_geojson_retry_tracker(destfiles)
+
+  for (batch_index in seq_along(url_batches)) {
+    allurls <- url_batches[[batch_index]]
+    alldestfiles <- destfile_batches[[batch_index]]
+
+    while (length(allurls)) {
+      res <- curl::multi_download(
+        urls = allurls,
+        destfiles = alldestfiles,
+        resume = FALSE,
+        progress = TRUE,
+        multiplex = TRUE,
+        httpheader = curl:::format_request_headers(
+          list(
+            "Accept-Encoding" = "gzip, deflate",
+            "Accept" = "application/json",
+            "User-Agent" = "https://github.com/bcgov/bcdata"
+          )
         )
       )
+
+      failed_downloads <- !res$success
+      unreadable_downloads <- vapply(alldestfiles, function(path) !collect_geojson_readable(path), logical(1))
+      retry_downloads <- failed_downloads | unreadable_downloads
+
+      if (any(retry_downloads)) {
+        stale_files <- alldestfiles[retry_downloads]
+        retry_counts[stale_files] <- retry_counts[stale_files] + 1L
+
+        exceeded_retries <- stale_files[retry_counts[stale_files] >= max_retries]
+        if (length(exceeded_retries)) {
+          stop(
+            sprintf(
+              "GeoJSON download failed after %s attempts: %s",
+              max_retries,
+              paste(exceeded_retries, collapse = ", ")
+            ),
+            call. = FALSE
+          )
+        }
+
+        unlink(stale_files[file.exists(stale_files)])
+      }
+
+      allurls <- allurls[retry_downloads]
+      alldestfiles <- alldestfiles[retry_downloads]
+    }
+  }
+
+  invalid_destfiles <- !vapply(destfiles, collect_geojson_readable, logical(1))
+  if (any(invalid_destfiles)) {
+    stop(
+      sprintf(
+        "Downloaded GeoJSON files could not be opened: %s",
+        paste(destfiles[invalid_destfiles], collapse = ", ")
+      ),
+      call. = FALSE
     )
-    alldld <- all(res$success)
-    allurls <- allurls[!res$success]
-    alldestfiles <- alldestfiles[!res$success]
   }
 
   suppressMessages(untrace(curl:::print_stream))

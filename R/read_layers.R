@@ -373,7 +373,7 @@ read_ccb <- function(dsn = NULL, layer = "Cut_Block_all_BC",  wkt_filter = chara
 
   ccb_record <- "b1b647a6-f271-42e0-9cd0-89ec24bce9f7"
   ccb_resources <- bcdata::bcdc_tidy_resources(ccb_record)
-  ccb_vars <- "HARVEST_YEAR"
+  ccb_vars <- "HARVEST_START_YEAR_CALENDAR"
 
   ccb_query <- bcdata::bcdc_query_geodata(record = ccb_record) |>
     bcdata::select(.include = ccb_vars)
@@ -621,7 +621,12 @@ number_of_records <- function(x) {
 resolve_resource <- function(x) {
   x <- x[x$format == "fgdb",c("url", "id")][1,]
   path <- file.path(cache_dir(), x$id)
-  if (!dir.exists(path)) {
+  cached_resource <- cached_resource_path(path, x$url)
+
+  if (!dir.exists(path) || is.null(cached_resource)) {
+    if (dir.exists(path)) {
+      unlink(path, recursive = TRUE)
+    }
     dir.create(path, showWarnings = FALSE, recursive = TRUE)
     file <- file.path(path, basename(x$url))
     rlang::with_options(
@@ -633,10 +638,53 @@ resolve_resource <- function(x) {
       unlink(file)
       file <- tools::file_path_sans_ext(file)
     }
+    if (tools::file_ext(file) %in% "") file <- sprintf("%s.gdb", file)
+    cached_resource <- cached_resource_path(path, x$url, preferred = file)
   } else {
-    file <- file.path(path, tools::file_path_sans_ext(basename(x$url)))
-    message("Reusing resource from cache [%s]" |> sprintf(file))
+    message("Reusing resource from cache [%s]" |> sprintf(cached_resource))
   }
-  if (tools::file_ext(file) %in% "") file <- sprintf("%s.gdb", file)
-  return(file)
+
+  if (is.null(cached_resource)) {
+    stop("Downloaded resource could not be found in cache.", call. = FALSE)
+  }
+
+  return(cached_resource)
+}
+
+cached_resource_path <- function(path, url, preferred = NULL) {
+  candidates <- character()
+
+  if (!is.null(preferred)) {
+    candidates <- c(candidates, preferred)
+  }
+
+  basename_no_ext <- tools::file_path_sans_ext(basename(url))
+  candidates <- c(
+    candidates,
+    file.path(path, basename_no_ext),
+    file.path(path, paste0(basename_no_ext, ".gdb"))
+  )
+
+  # Accept regular files or .gdb directories; skip plain directories that are
+
+  # not valid GDAL data sources (e.g. a wrapper folder inside a ZIP).
+  is_valid <- file.exists(candidates) & (
+    !dir.exists(candidates) | grepl("\\.gdb$", candidates, ignore.case = TRUE)
+  )
+  existing_candidates <- unique(candidates[is_valid])
+  if (length(existing_candidates)) {
+    return(existing_candidates[1])
+  }
+
+  # Fallback: search for .gdb directories at the top level and one level down
+  # (some ZIPs nest the .gdb inside a wrapper folder).
+  gdb_dirs <- Sys.glob(file.path(path, "*.gdb"))
+  if (!length(gdb_dirs)) {
+    gdb_dirs <- Sys.glob(file.path(path, "*", "*.gdb"))
+  }
+  if (length(gdb_dirs)) {
+    return(gdb_dirs[1])
+  }
+
+  NULL
 }

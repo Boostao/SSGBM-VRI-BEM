@@ -426,7 +426,21 @@ gdal_append_rasterize_grid_options <- function(options, a_srs, te, tr, layer = N
   options
 }
 
-combine_materialized_rasters <- function(dst_filename_att, layers_names, dst_filename, output_raster, verbose, factor_conv_list = NULL) {
+gdal_append_creation_options <- function(options, creation_options = NULL) {
+  if (is.null(creation_options) || length(creation_options) == 0) {
+    return(options)
+  }
+
+  c(options, as.vector(rbind("-co", creation_options)))
+}
+
+materialized_gtiff_creation_options <- function() {
+  c("COMPRESS=DEFLATE", "TILED=YES", "BIGTIFF=IF_SAFER")
+}
+
+combine_materialized_rasters <- function(dst_filename_att, layers_names, dst_filename, output_raster, verbose,
+                                         factor_conv_list = NULL, combined_datatype = NULL,
+                                         gdal_creation_options = materialized_gtiff_creation_options()) {
   if (verbose) {
     message("Combining all raster layers into one file")
   }
@@ -447,7 +461,17 @@ combine_materialized_rasters <- function(dst_filename_att, layers_names, dst_fil
   if (verbose) {
     message(paste0("Writing new raster file at ", dst_filename))
   }
-  terra::writeRaster(x = total_raster, filename = dst_filename, overwrite = TRUE)
+
+  write_args <- list(
+    x = total_raster,
+    filename = dst_filename,
+    overwrite = TRUE,
+    gdal = gdal_creation_options
+  )
+  if (!is.null(combined_datatype)) {
+    write_args$datatype <- combined_datatype
+  }
+  do.call(terra::writeRaster, write_args)
 
   if (verbose) {
     message("deleting temporary files")
@@ -478,7 +502,12 @@ combine_materialized_rasters <- function(dst_filename_att, layers_names, dst_fil
 #' @export
 rasterize_sf_gdal_materialized <- function(src_datasource, dst_filename, layer = NULL, a_srs = NULL, te = NULL, tr = NULL, reference = NULL,
                                            numeric_attributes = NULL, character_attributes = NULL, date_attributes = NULL, factor_conv_list = NULL,
-                                           burn = NULL, output_raster = FALSE, verbose = TRUE) {
+                                           burn = NULL, output_raster = FALSE, verbose = TRUE,
+                                           numeric_gdal_type = NULL, character_gdal_type = NULL,
+                                           date_gdal_type = NULL, burn_gdal_type = NULL,
+                                           combined_datatype = NULL,
+                                           gdal_creation_options = materialized_gtiff_creation_options(),
+                                           gdal_config_options = character(0)) {
 
   if (!is.null(reference)) {
     if (inherits(reference, "character")) {
@@ -538,13 +567,18 @@ rasterize_sf_gdal_materialized <- function(src_datasource, dst_filename, layer =
       layers_names <- c(layers_names, numeric_attributes[i])
 
       options <- c("-a", numeric_attributes[i])
+      if (!is.null(numeric_gdal_type)) {
+        options <- c(options, "-ot", numeric_gdal_type)
+      }
       options <- gdal_append_rasterize_grid_options(options, a_srs, te, tr, temp_layer)
+      options <- gdal_append_creation_options(options, gdal_creation_options)
 
       sf::gdal_utils(
         util = "rasterize",
         source = temp_gpkg,
         destination = paste0(dst_file_no_ext, "_", numeric_attributes[i], ".", dst_file_extension),
-        options = options
+        options = options,
+        config_options = gdal_config_options
       )
     }
   }
@@ -599,15 +633,21 @@ rasterize_sf_gdal_materialized <- function(src_datasource, dst_filename, layer =
         options <- gdal_append_rasterize_grid_options(options, a_srs, te, tr, temp_layer)
       }
 
+      if (!is.null(character_gdal_type)) {
+        options <- c(options, "-ot", character_gdal_type)
+      }
+
       if (nrow(factor_dt) > 0) {
         options <- gdal_append_rasterize_grid_options(options, a_srs, te, tr)
       }
+      options <- gdal_append_creation_options(options, gdal_creation_options)
 
       sf::gdal_utils(
         util = "rasterize",
         source = temp_gpkg,
         destination = paste0(dst_file_no_ext, "_", character_attributes[i], ".", dst_file_extension),
-        options = options
+        options = options,
+        config_options = gdal_config_options
       )
     }
   }
@@ -632,13 +672,18 @@ rasterize_sf_gdal_materialized <- function(src_datasource, dst_filename, layer =
         "-sql", sql_statement,
         "-a", coded_field
       )
+      if (!is.null(date_gdal_type)) {
+        options <- c(options, "-ot", date_gdal_type)
+      }
       options <- gdal_append_rasterize_grid_options(options, a_srs, te, tr)
+      options <- gdal_append_creation_options(options, gdal_creation_options)
 
       sf::gdal_utils(
         util = "rasterize",
         source = temp_gpkg,
         destination = paste0(dst_file_no_ext, "_", date_attributes[i], ".", dst_file_extension),
-        options = options
+        options = options,
+        config_options = gdal_config_options
       )
     }
   }
@@ -662,13 +707,18 @@ rasterize_sf_gdal_materialized <- function(src_datasource, dst_filename, layer =
       "-sql", sql_statement,
       "-a", coded_field
     )
+    if (!is.null(burn_gdal_type)) {
+      options <- c(options, "-ot", burn_gdal_type)
+    }
     options <- gdal_append_rasterize_grid_options(options, a_srs, te, tr)
+    options <- gdal_append_creation_options(options, gdal_creation_options)
 
     sf::gdal_utils(
       util = "rasterize",
       source = temp_gpkg,
       destination = paste0(dst_file_no_ext, "_", burn, ".", dst_file_extension),
-      options = options
+      options = options,
+      config_options = gdal_config_options
     )
   }
 
@@ -685,7 +735,9 @@ rasterize_sf_gdal_materialized <- function(src_datasource, dst_filename, layer =
     dst_filename = dst_filename,
     output_raster = output_raster,
     verbose = verbose,
-    factor_conv_list = factor_conv_list
+    factor_conv_list = factor_conv_list,
+    combined_datatype = combined_datatype,
+    gdal_creation_options = gdal_creation_options
   )
 }
 
@@ -714,7 +766,11 @@ rasterize_vri_materialized <- function(src_datasource, dst_filename, layer = NUL
     factor_conv_list = raster_conv$vri,
     burn = burn,
     output_raster = output_raster,
-    verbose = verbose
+    verbose = verbose,
+    numeric_gdal_type = "Int32",
+    character_gdal_type = "Int32",
+    date_gdal_type = "Int32",
+    combined_datatype = "INT4S"
   )
 }
 
@@ -742,7 +798,9 @@ rasterize_wetlands_materialized <- function(src_datasource, dst_filename, layer 
     date_attributes = date_attributes,
     burn = burn,
     output_raster = output_raster,
-    verbose = verbose
+    verbose = verbose,
+    burn_gdal_type = "Byte",
+    combined_datatype = "INT1U"
   )
 }
 
@@ -770,7 +828,9 @@ rasterize_rivers_materialized <- function(src_datasource, dst_filename, layer = 
     date_attributes = date_attributes,
     burn = burn,
     output_raster = output_raster,
-    verbose = verbose
+    verbose = verbose,
+    burn_gdal_type = "Byte",
+    combined_datatype = "INT1U"
   )
 }
 
@@ -798,7 +858,9 @@ rasterize_ccb_materialized <- function(src_datasource, dst_filename, layer = NUL
     date_attributes = date_attributes,
     burn = burn,
     output_raster = output_raster,
-    verbose = verbose
+    verbose = verbose,
+    numeric_gdal_type = "Int32",
+    combined_datatype = "INT4S"
   )
 }
 
@@ -832,6 +894,9 @@ rasterize_bem_materialized <- function(src_datasource, dst_filename, layer = NUL
     factor_conv_list = raster_conv$bem,
     burn = burn,
     output_raster = output_raster,
-    verbose = verbose
+    verbose = verbose,
+    numeric_gdal_type = "Float32",
+    character_gdal_type = "Int32",
+    combined_datatype = "FLT4S"
   )
 }
