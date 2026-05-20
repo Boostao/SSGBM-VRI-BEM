@@ -1148,12 +1148,374 @@ terra_rrm_correct_small_lakes <- function(x,
 }
 
 
+# ---------------------------------------------------------------------------
+# Block-native helpers for terra_rrm_correct_bem_from_vri
+#
+# These functions operate on a plain numeric matrix `m` (rows = raster cells,
+# cols = layers) as returned by terra::readValues(..., mat = TRUE).
+# They never build lazy terra DAGs and never touch disk.
+#
+# `idx`   : named integer vector produced by setNames(seq_len(nlyr(x)), names(x))
+# `codes` : named list of pre-computed integer codes from raster_conv
+# ---------------------------------------------------------------------------
+
+# Test whether cell values belong to a set of codes (NA stays NA).
+.blk_match <- function(col, codes) {
+  valid <- unique(stats::na.omit(codes))
+  if (length(valid) == 0L) {
+    return(ifelse(is.na(col), NA_integer_, 0L))
+  }
+  ifelse(is.na(col), NA_integer_, ifelse(col %in% valid, 1L, 0L))
+}
+
+# Intersect two 0/1/NA masks: NA propagates, 0 wins.
+.blk_and <- function(a, b) {
+  ifelse(is.na(a) | is.na(b), NA_integer_, ifelse(a == 1L & b == 1L, 1L, 0L))
+}
+
+# Shift component fields in a block matrix according to shift_pattern.
+# shift_pattern is a list of c(to_component, from_component) pairs where
+# from_component may be NA (meaning: blank the target).
+# `layer_lookup` is the result of .terra_rrm_component_layer_lookup().
+.blk_shift_component_fields <- function(m, mask_vec, shift_pattern, layer_lookup, idx) {
+  for (pattern in shift_pattern) {
+    to_component   <- as.character(pattern[[1]])
+    from_component <- pattern[[2]]
+
+    if (is.na(to_component) || !to_component %in% names(layer_lookup)) {
+      next
+    }
+
+    target_fields <- layer_lookup[[to_component]]
+    source_fields <- if (is.na(from_component)) {
+      rep(NA_character_, length(target_fields))
+    } else {
+      layer_lookup[[as.character(from_component)]]
+    }
+
+    for (i in seq_along(target_fields)) {
+      tgt <- target_fields[[i]]
+      src <- source_fields[[i]]
+      if (!tgt %in% names(idx)) next
+
+      if (is.na(src) || !src %in% names(idx)) {
+        m[mask_vec, idx[[tgt]]] <- NA_real_
+      } else {
+        m[mask_vec, idx[[tgt]]] <- ifelse(
+          is.na(m[mask_vec, idx[[src]]]),
+          NA_real_,
+          m[mask_vec, idx[[src]]]
+        )
+      }
+    }
+  }
+  m
+}
+
+# Blank eco fields for cells where blank_vec == 1.
+# Mirrors .terra_rrm_blank_eco_fields: sets component 1/2/3 eco fields to NA
+# (excluding BEUMC_S1/2/3), then sets SDEC_2 and SDEC_3 to 0.
+.blk_blank_eco_fields <- function(m, blank_vec, field_groups, idx) {
+  mask_vec <- !is.na(blank_vec) & blank_vec == 1L
+
+  char_fields <- c(
+    field_groups$character_1,
+    sub("1", "2", field_groups$character_1),
+    sub("1", "3", field_groups$character_1)
+  )
+  char_fields <- setdiff(char_fields, c("BEUMC_S1", "BEUMC_S2", "BEUMC_S3"))
+
+  int_fields <- c(
+    field_groups$integer_1,
+    sub("1", "2", field_groups$integer_1),
+    sub("1", "3", field_groups$integer_1)
+  )
+
+  for (fld in c(char_fields, int_fields)) {
+    if (fld %in% names(idx)) {
+      m[mask_vec, idx[[fld]]] <- NA_real_
+    }
+  }
+
+  if ("SDEC_2" %in% names(idx)) m[mask_vec, idx[["SDEC_2"]]] <- 0
+  if ("SDEC_3" %in% names(idx)) m[mask_vec, idx[["SDEC_3"]]] <- 0
+  m
+}
+
+# Apply a primary BEUMC rule to a block matrix.
+# Returns updated list(m, row_updated, blank_eco).
+.blk_apply_primary_beumc_rule <- function(m, row_updated, blank_eco, mask_vec,
+                                          beumc_code, idx,
+                                          blank_components = TRUE,
+                                          set_sdec1 = 10L,
+                                          set_sdec2 = NULL,
+                                          set_sdec3 = NULL) {
+  if ("SDEC_1" %in% names(idx))  m[mask_vec, idx[["SDEC_1"]]]  <- set_sdec1
+  if ("BEUMC_S1" %in% names(idx)) m[mask_vec, idx[["BEUMC_S1"]]] <- beumc_code
+  if (!is.null(set_sdec2) && "SDEC_2" %in% names(idx)) m[mask_vec, idx[["SDEC_2"]]] <- set_sdec2
+  if (!is.null(set_sdec3) && "SDEC_3" %in% names(idx)) m[mask_vec, idx[["SDEC_3"]]] <- set_sdec3
+
+  row_updated[mask_vec] <- 1L
+  if (blank_components) {
+    blank_eco[mask_vec] <- 1L
+  }
+
+  list(m = m, row_updated = row_updated, blank_eco = blank_eco)
+}
+
+# Combine duplicate BEUMC components (S1 == S2) in a block matrix.
+# Returns list(m, row_updated, blank_eco).
+.blk_combine_duplicate_beumc <- function(m, idx, layer_lookup, use_ifelse) {
+  n <- nrow(m)
+  row_updated <- integer(n)
+  blank_eco   <- integer(n)
+
+  # NA stays NA for row_updated (cells with no data at all)
+  has_data <- !is.na(m[, idx[[names(idx)[1L]]]])
+  row_updated[!has_data] <- NA_integer_
+
+  if (!"BEUMC_S1" %in% names(idx) || !"BEUMC_S2" %in% names(idx)) {
+    return(list(m = m, row_updated = row_updated, blank_eco = blank_eco))
+  }
+
+  s1 <- m[, idx[["BEUMC_S1"]]]
+  s2 <- m[, idx[["BEUMC_S2"]]]
+
+  # duplicate mask: S1 == S2 and neither is NA, and cell has data
+  dup <- has_data & !is.na(s1) & !is.na(s2) & s1 == s2
+
+  # SMPL_TYPE gate (if present): only process cells where SMPL_TYPE is NA
+  if ("SMPL_TYPE" %in% names(idx)) {
+    smpl <- m[, idx[["SMPL_TYPE"]]]
+    dup <- dup & is.na(smpl)
+  }
+
+  if (any(dup)) {
+    sdec1 <- if ("SDEC_1" %in% names(idx)) m[, idx[["SDEC_1"]]] else rep(0, n)
+    sdec2 <- if ("SDEC_2" %in% names(idx)) m[, idx[["SDEC_2"]]] else rep(0, n)
+    sdec3 <- if ("SDEC_3" %in% names(idx)) m[, idx[["SDEC_3"]]] else rep(0, n)
+
+    if ("SDEC_1" %in% names(idx)) m[dup, idx[["SDEC_1"]]] <- sdec1[dup] + sdec2[dup]
+    if ("SDEC_2" %in% names(idx)) m[dup, idx[["SDEC_2"]]] <- sdec3[dup]
+    if ("SDEC_3" %in% names(idx)) m[dup, idx[["SDEC_3"]]] <- 0
+
+    m <- .blk_shift_component_fields(m, dup, list(c(2, 3), c(3, NA)), layer_lookup, idx)
+    row_updated[dup] <- if (isTRUE(use_ifelse)) 1L else 0L
+  }
+
+  list(m = m, row_updated = row_updated, blank_eco = blank_eco)
+}
+
+# Remove inadequate wetland components in treed units.
+# Returns list(m, row_updated).
+.blk_remove_inadequate_wetlands <- function(m, row_updated, idx, layer_lookup, codes) {
+  has_data <- !is.na(row_updated)
+  not_updated <- has_data & !is.na(row_updated) & row_updated == 0L
+
+  treed  <- .blk_match(m[, idx[["BCLCS_LV_4"]]], codes$treed_codes)
+  wl_s3  <- !is.na(m[, idx[["BEUMC_S3"]]]) & m[, idx[["BEUMC_S3"]]] == codes$wl_code
+
+  # Gate on SMPL_TYPE if present
+  smpl_ok <- if ("SMPL_TYPE" %in% names(idx)) is.na(m[, idx[["SMPL_TYPE"]]]) else rep(TRUE, nrow(m))
+
+  # --- pass 1: WL in S3, treed → blank S3 ---
+  mask_wl3 <- smpl_ok & !is.na(treed) & treed == 1L & wl_s3 & not_updated
+
+  if (any(mask_wl3)) {
+    sdec2 <- m[, idx[["SDEC_2"]]]; sdec3 <- m[, idx[["SDEC_3"]]]
+    m[mask_wl3, idx[["SDEC_2"]]] <- sdec2[mask_wl3] + sdec3[mask_wl3]
+    m[mask_wl3, idx[["SDEC_3"]]] <- 0
+    m <- .blk_shift_component_fields(m, mask_wl3, list(c(3, NA)), layer_lookup, idx)
+    row_updated[mask_wl3] <- 1L
+  }
+
+  not_updated <- has_data & !is.na(row_updated) & row_updated == 0L
+  wl_s2 <- !is.na(m[, idx[["BEUMC_S2"]]]) & m[, idx[["BEUMC_S2"]]] == codes$wl_code
+
+  # --- pass 2: WL in S2 with non-empty S3, treed → shift S2←S3 ---
+  mask_wl2_from3 <- smpl_ok & !is.na(treed) & treed == 1L & wl_s2 &
+    !is.na(m[, idx[["SDEC_3"]]]) & m[, idx[["SDEC_3"]]] > 0 & not_updated
+
+  if (any(mask_wl2_from3)) {
+    m <- .blk_shift_component_fields(m, mask_wl2_from3, list(c(2, 3), c(3, NA)), layer_lookup, idx)
+    sdec2 <- m[, idx[["SDEC_2"]]]; sdec3 <- m[, idx[["SDEC_3"]]]
+    m[mask_wl2_from3, idx[["SDEC_2"]]] <- sdec2[mask_wl2_from3] + sdec3[mask_wl2_from3]
+    m[mask_wl2_from3, idx[["SDEC_3"]]] <- 0
+    row_updated[mask_wl2_from3] <- 1L
+  }
+
+  not_updated <- has_data & !is.na(row_updated) & row_updated == 0L
+  wl_s2 <- !is.na(m[, idx[["BEUMC_S2"]]]) & m[, idx[["BEUMC_S2"]]] == codes$wl_code
+
+  # --- pass 3: WL in S2 with empty S3, treed → absorb into S1 ---
+  mask_wl2_to1 <- smpl_ok & !is.na(treed) & treed == 1L & wl_s2 &
+    (is.na(m[, idx[["SDEC_3"]]]) | m[, idx[["SDEC_3"]]] == 0) & not_updated
+
+  if (any(mask_wl2_to1)) {
+    sdec1 <- m[, idx[["SDEC_1"]]]; sdec2 <- m[, idx[["SDEC_2"]]]
+    m[mask_wl2_to1, idx[["SDEC_1"]]] <- sdec1[mask_wl2_to1] + sdec2[mask_wl2_to1]
+    m <- .blk_shift_component_fields(m, mask_wl2_to1, list(c(2, NA)), layer_lookup, idx)
+    m[mask_wl2_to1, idx[["SDEC_2"]]] <- 0
+    row_updated[mask_wl2_to1] <- 1L
+  }
+
+  not_updated <- has_data & !is.na(row_updated) & row_updated == 0L
+  wl_s1 <- !is.na(m[, idx[["BEUMC_S1"]]]) & m[, idx[["BEUMC_S1"]]] == codes$wl_code
+
+  # --- pass 4: WL in S1 with non-empty S2, treed → shift S1←S2←S3 ---
+  mask_wl1_from2 <- smpl_ok & !is.na(treed) & treed == 1L & wl_s1 &
+    !is.na(m[, idx[["SDEC_2"]]]) & m[, idx[["SDEC_2"]]] > 0 & not_updated
+
+  if (any(mask_wl1_from2)) {
+    m <- .blk_shift_component_fields(m, mask_wl1_from2, list(c(1, 2), c(2, 3), c(3, NA)), layer_lookup, idx)
+    m[mask_wl1_from2, idx[["SDEC_3"]]] <- 0
+    row_updated[mask_wl1_from2] <- 1L
+  }
+
+  list(m = m, row_updated = row_updated)
+}
+
+# Apply all VRI correction rules to one block matrix.
+# All parameters are scalars / integer vectors pre-computed outside the block loop.
+.blk_apply_vri_rules <- function(m, idx, codes, layer_lookup, field_groups,
+                                 clear_site_ma, use_ifelse) {
+
+  # --- initial field clears ---
+  if (clear_site_ma) {
+    has_data <- !is.na(m[, idx[[names(idx)[1L]]]])
+    if ("SITE_M1A" %in% names(idx)) m[has_data, idx[["SITE_M1A"]]] <- NA_real_
+    if ("SITE_M2A" %in% names(idx)) m[has_data, idx[["SITE_M2A"]]] <- NA_real_
+  }
+  if ("SITE_M3A" %in% names(idx)) {
+    has_data <- !is.na(m[, idx[[names(idx)[1L]]]])
+    m[has_data, idx[["SITE_M3A"]]] <- NA_real_
+  }
+
+  # --- combine duplicate BEUMC components ---
+  dup_state   <- .blk_combine_duplicate_beumc(m, idx, layer_lookup, use_ifelse)
+  m           <- dup_state$m
+  row_updated <- dup_state$row_updated
+  blank_eco   <- dup_state$blank_eco
+
+  # --- remove inadequate wetland components ---
+  wl_state    <- .blk_remove_inadequate_wetlands(m, row_updated, idx, layer_lookup, codes)
+  m           <- wl_state$m
+  row_updated <- wl_state$row_updated
+
+  # Helper: build the base mask for rule application
+  # TRUE where cell has data, SMPL_TYPE is NA (or absent), and not yet updated
+  smpl_ok     <- if ("SMPL_TYPE" %in% names(idx)) is.na(m[, idx[["SMPL_TYPE"]]]) else rep(TRUE, nrow(m))
+  base_mask   <- function() smpl_ok & !is.na(row_updated) & row_updated == 0L
+
+  # Helper: fire one primary BEUMC rule
+  apply_rule  <- function(mask_vec, beumc_code, blank_components = TRUE,
+                           set_sdec1 = 10L, set_sdec2 = NULL, set_sdec3 = NULL) {
+    if (is.na(beumc_code) || !any(mask_vec)) return(invisible(NULL))
+    res <- .blk_apply_primary_beumc_rule(
+      m, row_updated, blank_eco, mask_vec, beumc_code, idx,
+      blank_components = blank_components,
+      set_sdec1 = set_sdec1, set_sdec2 = set_sdec2, set_sdec3 = set_sdec3
+    )
+    m           <<- res$m
+    row_updated <<- res$row_updated
+    blank_eco   <<- res$blank_eco
+  }
+
+  lv1  <- m[, idx[["BCLCS_LV_1"]]]
+  lv2  <- m[, idx[["BCLCS_LV_2"]]]
+  lv3  <- m[, idx[["BCLCS_LV_3"]]]
+  lv5  <- m[, idx[["BCLCS_LV_5"]]]
+  area <- m[, idx[["Area_Ha"]]]
+
+  # lake / reservoir / river rules
+  apply_rule(base_mask() & !is.na(lv1) & lv1 == codes$lv1_n & !is.na(lv5) & lv5 == codes$lv5_la & !is.na(area) & area <= 2,    codes$beu_ow)
+  apply_rule(base_mask() & !is.na(lv1) & lv1 == codes$lv1_n & !is.na(lv5) & lv5 == codes$lv5_la & !is.na(area) & area > 2 & area <= 60, codes$beu_ls)
+  apply_rule(base_mask() & !is.na(lv1) & lv1 == codes$lv1_n & !is.na(lv5) & lv5 == codes$lv5_la & !is.na(area) & area > 60,   codes$beu_ll)
+  apply_rule(base_mask() & !is.na(lv1) & lv1 == codes$lv1_n & !is.na(lv5) & lv5 == codes$lv5_re,                              codes$beu_re)
+  apply_rule(base_mask() & !is.na(lv1) & lv1 == codes$lv1_n & .blk_match(lv5, codes$lv5_ri_rs) == 1L,                         codes$beu_ri)
+  apply_rule(base_mask() & !is.na(lv1) & lv1 == codes$lv1_v & !is.na(lv2) & lv2 == codes$lv2_n &
+               !is.na(lv3) & lv3 == codes$lv3_w & !is.na(m[, idx[["AGE_CL_STS"]]]) & m[, idx[["AGE_CL_STS"]]] == -1,         codes$beu_wl)
+
+  # Black spruce
+  apply_rule(base_mask() & !is.na(m[, idx[["SPEC_CD_1"]]]) & m[, idx[["SPEC_CD_1"]]] == codes$spec_sb &
+               !is.na(m[, idx[["SPEC_PCT_1"]]]) & m[, idx[["SPEC_PCT_1"]]] >= 90,                                              codes$beu_bb)
+
+  # Urban / recreation
+  apply_rule(base_mask() & !is.na(lv5) & lv5 == codes$lv5_ap,                                                                  codes$beu_ur)
+
+  # Burned: set SDEC_1=10 and DISTCLS_1=F code without blanking eco, no BEUMC change via apply_rule
+  mask_bu <- base_mask() & !is.na(lv5) & lv5 == codes$lv5_bu
+  if (any(mask_bu)) {
+    if ("SDEC_1" %in% names(idx))    m[mask_bu, idx[["SDEC_1"]]]    <- 10
+    if ("DISTCLS_1" %in% names(idx)) m[mask_bu, idx[["DISTCLS_1"]]] <- codes$distcls_f
+    row_updated[mask_bu] <- 1L
+  }
+
+  # Remaining map-code rules
+  apply_rule(base_mask() & .blk_match(m[, idx[["SLOPE_MOD"]]], codes$slope_mod_qz) == 1L,                     codes$beu_cl)
+  apply_rule(base_mask() & !is.na(lv5) & lv5 == codes$lv5_gb,                                                 codes$beu_gb)
+  apply_rule(base_mask() & .blk_match(lv5, codes$lv5_gl_pn) == 1L,                                            codes$beu_gl)
+  apply_rule(base_mask() & !is.na(lv5) & lv5 == codes$lv5_gp,                                                 codes$beu_gp)
+  apply_rule(base_mask() & !is.na(lv5) & lv5 == codes$lv5_ll,                                                 codes$beu_ll)
+  apply_rule(base_mask() & .blk_match(lv5, codes$lv5_mi) == 1L,                                               codes$beu_mi)
+  apply_rule(base_mask() & .blk_match(lv5, codes$lv5_ro) == 1L,                                               codes$beu_ro)
+  apply_rule(base_mask() & !is.na(lv5) & lv5 == codes$lv5_ta,                                                 codes$beu_ta)
+  apply_rule(base_mask() & .blk_match(lv5, codes$lv5_tc) == 1L,                                               codes$beu_tc)
+  apply_rule(base_mask() & !is.na(lv5) & lv5 == codes$lv5_tr,                                                 codes$beu_tr)
+  apply_rule(base_mask() & .blk_match(lv5, codes$lv5_uv) == 1L,                                               codes$beu_uv)
+  apply_rule(base_mask() & .blk_match(m[, idx[["LAND_CD_1"]]], codes$land_uv) == 1L &
+               !is.na(m[, idx[["COV_PCT_1"]]]) & m[, idx[["COV_PCT_1"]]] >= 95,                               codes$beu_uv)
+  apply_rule(base_mask() & !is.na(lv5) & lv5 == codes$lv5_ur,                                                 codes$beu_ur)
+
+  # Riparian TC component (treed with rz veg cover)
+  mask_tc2 <- base_mask() & !is.na(lv2) & lv2 == codes$lv2_t &
+    !is.na(m[, idx[["SDEC_1"]]]) & m[, idx[["SDEC_1"]]] == 10 &
+    .blk_match(m[, idx[["LBL_VEGCOV"]]], codes$lbl_rz) == 1L
+  if (any(mask_tc2)) {
+    if ("SDEC_1"   %in% names(idx)) m[mask_tc2, idx[["SDEC_1"]]]   <- 8
+    if ("SDEC_2"   %in% names(idx)) m[mask_tc2, idx[["SDEC_2"]]]   <- 2
+    if ("BEUMC_S2" %in% names(idx)) m[mask_tc2, idx[["BEUMC_S2"]]] <- codes$beu_tc
+    row_updated[mask_tc2] <- 1L
+  }
+
+  # Stand composition updates
+  if ("STAND_A1" %in% names(idx)) {
+    spec1 <- m[, idx[["SPEC_CD_1"]]]
+    pct1  <- m[, idx[["SPEC_PCT_1"]]]
+
+    # deciduous ≥75 % → B
+    mask_stand_b <- smpl_ok & .blk_match(spec1, codes$deciduous_codes) == 1L &
+      !is.na(pct1) & pct1 >= 75 & .blk_match(m[, idx[["STAND_A1"]]], codes$stand_cm) == 1L
+    if (any(mask_stand_b)) m[mask_stand_b, idx[["STAND_A1"]]] <- codes$stand_b
+
+    # deciduous 50–74 % → M
+    mask_stand_m <- smpl_ok & .blk_match(spec1, codes$deciduous_codes) == 1L &
+      !is.na(pct1) & pct1 >= 50 & pct1 < 75 & .blk_match(m[, idx[["STAND_A1"]]], codes$stand_cb) == 1L
+    if (any(mask_stand_m)) m[mask_stand_m, idx[["STAND_A1"]]] <- codes$stand_m
+
+    # conifer ≥75 % → C
+    mask_stand_c <- smpl_ok & .blk_match(spec1, codes$conifer_codes) == 1L &
+      !is.na(pct1) & pct1 >= 75 & .blk_match(m[, idx[["STAND_A1"]]], codes$stand_m_only) == 1L
+    if (any(mask_stand_c)) m[mask_stand_c, idx[["STAND_A1"]]] <- codes$stand_c
+  }
+
+  # Blank eco fields for cells that were updated with blank_components = TRUE
+  m <- .blk_blank_eco_fields(m, blank_eco, field_groups, idx)
+
+  m
+}
+
+# ---------------------------------------------------------------------------
 #' Terra-native VRI-driven BEM corrections
 #'
 #' Builds the ordered on-disk VRI correction stage for the raster-only path.
 #' This stage covers duplicate component consolidation, map-code reassignment,
 #' removal of inappropriate wetland components in treed units, stand updates,
 #' and allowed BEC/BEU correction lookups.
+#'
+#' All heavy computation runs in a single `terra::blocks()` read/write pass
+#' over the raster. No lazy terra DAG is accumulated across rules, which keeps
+#' memory usage and I/O proportional to 2× file size regardless of rule count.
 #'
 #' @param x A `terra::SpatRaster` containing aligned VRI/BEM layers.
 #' @param clear_site_ma Logical. If `TRUE`, `SITE_M1A`, `SITE_M2A`, and
@@ -1189,160 +1551,119 @@ terra_rrm_correct_bem_from_vri <- function(x,
     )
   }
 
-  result <- x
-  if (clear_site_ma) {
-    result <- .terra_rrm_apply_constant(result, "SITE_M1A", .terra_rrm_non_missing_mask(result), NA)
-    result <- .terra_rrm_apply_constant(result, "SITE_M2A", .terra_rrm_non_missing_mask(result), NA)
-  }
-  result <- .terra_rrm_apply_constant(result, "SITE_M3A", .terra_rrm_non_missing_mask(result), NA)
+  # Named column index: maps layer name → column number in the values matrix
+  idx <- setNames(seq_len(terra::nlyr(x)), names(x))
 
-  state <- .terra_rrm_combine_duplicate_beumc(result, use_ifelse = use_ifelse)
-  result <- state$x
-  row_updated <- state$row_updated
-  blank_eco <- state$blank_eco
+  # Pre-compute all integer codes once from raster_conv — same tables used
+  # during rasterization, so these are the exact values stored on disk.
+  lkp_vri <- function(layer, labels) .terra_rrm_layer_codes(x, layer, labels, raster_conv$vri, strict = FALSE)
+  lkp_bem <- function(layer, labels) .terra_rrm_layer_codes(x, layer, labels, raster_conv$bem, strict = FALSE)
 
-  smpl_type_na <- .terra_rrm_optional_na_mask(result, "SMPL_TYPE")
-  lv1_n <- .terra_rrm_layer_codes(result, "BCLCS_LV_1", c("N"), raster_conv$vri, strict = FALSE)[[1]]
-  lv1_v <- .terra_rrm_layer_codes(result, "BCLCS_LV_1", c("V"), raster_conv$vri, strict = FALSE)[[1]]
-  lv2_n <- .terra_rrm_layer_codes(result, "BCLCS_LV_2", c("N"), raster_conv$vri, strict = FALSE)[[1]]
-  lv3_w <- .terra_rrm_layer_codes(result, "BCLCS_LV_3", c("W"), raster_conv$vri, strict = FALSE)[[1]]
-  lv5_la <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("LA"), raster_conv$vri, strict = FALSE)[[1]]
-  lv5_re <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("RE"), raster_conv$vri, strict = FALSE)[[1]]
-  lv5_ri_rs <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("RI", "RS"), raster_conv$vri, strict = FALSE)
-  lv5_ap <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("AP"), raster_conv$vri, strict = FALSE)[[1]]
-  lv5_bu <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("BU"), raster_conv$vri, strict = FALSE)[[1]]
-  lv5_gb <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("GB"), raster_conv$vri, strict = FALSE)[[1]]
-  lv5_gl_pn <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("GL", "PN"), raster_conv$vri, strict = FALSE)
-  lv5_gp <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("GP"), raster_conv$vri, strict = FALSE)[[1]]
-  lv5_ll <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("LL"), raster_conv$vri, strict = FALSE)[[1]]
-  lv5_mi <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("MI", "TZ", "MZ"), raster_conv$vri, strict = FALSE)
-  lv5_ro <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("RO", "BR", "BI"), raster_conv$vri, strict = FALSE)
-  lv5_ta <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("TA"), raster_conv$vri, strict = FALSE)[[1]]
-  lv5_tc <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("TC", "RN", "RZ"), raster_conv$vri, strict = FALSE)
-  lv5_tr <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("TR"), raster_conv$vri, strict = FALSE)[[1]]
-  lv5_uv <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("UV", "RS", "MU", "ES", "CB", "MN", "RM"), raster_conv$vri, strict = FALSE)
-  lv5_ur <- .terra_rrm_layer_codes(result, "BCLCS_LV_5", c("UR"), raster_conv$vri, strict = FALSE)[[1]]
-  slope_mod_qz <- .terra_rrm_layer_codes(result, "SLOPE_MOD", c("q", "z"), raster_conv$bem, strict = FALSE)
-  spec_sb <- .terra_rrm_layer_codes(result, "SPEC_CD_1", c("SB"), raster_conv$vri, strict = FALSE)[[1]]
-  deciduous_codes <- .terra_rrm_layer_codes(result, "SPEC_CD_1", c("AC", "ACB", "ACT", "AT", "EP"), raster_conv$vri, strict = FALSE)
-  conifer_codes <- .terra_rrm_layer_codes(result, "SPEC_CD_1", c("B", "BB", "BL", "CW", "FD", "FDI", "HM", "HW", "PA", "PL", "PLI", "S", "SB", "SE", "SS", "SW", "SX", "SXW"), raster_conv$vri, strict = FALSE)
-  land_uv <- .terra_rrm_layer_codes(result, "LAND_CD_1", c("UV", "RS", "MU", "ES", "CB", "MN", "RM"), raster_conv$vri, strict = FALSE)
-  lbl_rz <- .terra_rrm_layer_codes(
-    result,
-    "LBL_VEGCOV",
-    c(
+  codes <- list(
+    lv1_n          = lkp_vri("BCLCS_LV_1", "N")[[1]],
+    lv1_v          = lkp_vri("BCLCS_LV_1", "V")[[1]],
+    lv2_n          = lkp_vri("BCLCS_LV_2", "N")[[1]],
+    lv2_t          = lkp_vri("BCLCS_LV_2", "T")[[1]],
+    lv3_w          = lkp_vri("BCLCS_LV_3", "W")[[1]],
+    lv5_la         = lkp_vri("BCLCS_LV_5", "LA")[[1]],
+    lv5_re         = lkp_vri("BCLCS_LV_5", "RE")[[1]],
+    lv5_ri_rs      = lkp_vri("BCLCS_LV_5", c("RI", "RS")),
+    lv5_ap         = lkp_vri("BCLCS_LV_5", "AP")[[1]],
+    lv5_bu         = lkp_vri("BCLCS_LV_5", "BU")[[1]],
+    lv5_gb         = lkp_vri("BCLCS_LV_5", "GB")[[1]],
+    lv5_gl_pn      = lkp_vri("BCLCS_LV_5", c("GL", "PN")),
+    lv5_gp         = lkp_vri("BCLCS_LV_5", "GP")[[1]],
+    lv5_ll         = lkp_vri("BCLCS_LV_5", "LL")[[1]],
+    lv5_mi         = lkp_vri("BCLCS_LV_5", c("MI", "TZ", "MZ")),
+    lv5_ro         = lkp_vri("BCLCS_LV_5", c("RO", "BR", "BI")),
+    lv5_ta         = lkp_vri("BCLCS_LV_5", "TA")[[1]],
+    lv5_tc         = lkp_vri("BCLCS_LV_5", c("TC", "RN", "RZ")),
+    lv5_tr         = lkp_vri("BCLCS_LV_5", "TR")[[1]],
+    lv5_uv         = lkp_vri("BCLCS_LV_5", c("UV", "RS", "MU", "ES", "CB", "MN", "RM")),
+    lv5_ur         = lkp_vri("BCLCS_LV_5", "UR")[[1]],
+    spec_sb        = lkp_vri("SPEC_CD_1", "SB")[[1]],
+    deciduous_codes = lkp_vri("SPEC_CD_1", c("AC", "ACB", "ACT", "AT", "EP")),
+    conifer_codes  = lkp_vri("SPEC_CD_1", c("B", "BB", "BL", "CW", "FD", "FDI", "HM", "HW",
+                                             "PA", "PL", "PLI", "S", "SB", "SE", "SS", "SW", "SX", "SXW")),
+    land_uv        = lkp_vri("LAND_CD_1", c("UV", "RS", "MU", "ES", "CB", "MN", "RM")),
+    lbl_rz         = lkp_vri("LBL_VEGCOV", c(
       "rz", "rz,by", "rz,by,he", "rz,by,he,sl", "rz,by,sl", "rz,by,sl,he", "rz,by,st", "rz,he",
       "rz,by,sl,he", "rz,by,st", "rz,he", "rz,he,by", "rz,he,by,sl", "rz,he,sl", "rz,he,sl,by",
       "rz,he,st", "rz,he,st,by", "rz,hf,by", "rz,hf,sl,by", "rz,hg", "rz,hg,sl", "rz,sl",
       "rz,sl,by", "rz,sl,by,he", "rz,sl,he", "rz,sl,he,by", "rz,sl,hf", "rz,sl,hf,by", "rz,sl,hg",
       "rz,st", "rz,st,he", "rz,st,he,by", "rz,st,hf", "rz,st,hg"
-    ),
-    raster_conv$vri,
-    strict = FALSE
+    )),
+    slope_mod_qz   = lkp_bem("SLOPE_MOD", c("q", "z")),
+    treed_codes    = lkp_vri("BCLCS_LV_4", c("TB", "TC", "TM")),
+    wl_code        = lkp_bem("BEUMC_S1", "WL")[[1]],
+    beu_ow  = lkp_bem("BEUMC_S1", "OW")[[1]],
+    beu_ls  = lkp_bem("BEUMC_S1", "LS")[[1]],
+    beu_ll  = lkp_bem("BEUMC_S1", "LL")[[1]],
+    beu_re  = lkp_bem("BEUMC_S1", "RE")[[1]],
+    beu_ri  = lkp_bem("BEUMC_S1", "RI")[[1]],
+    beu_wl  = lkp_bem("BEUMC_S1", "WL")[[1]],
+    beu_bb  = lkp_bem("BEUMC_S1", "BB")[[1]],
+    beu_ur  = lkp_bem("BEUMC_S1", "UR")[[1]],
+    beu_cl  = lkp_bem("BEUMC_S1", "CL")[[1]],
+    beu_gb  = lkp_bem("BEUMC_S1", "GB")[[1]],
+    beu_gl  = lkp_bem("BEUMC_S1", "GL")[[1]],
+    beu_gp  = lkp_bem("BEUMC_S1", "GP")[[1]],
+    beu_mi  = lkp_bem("BEUMC_S1", "MI")[[1]],
+    beu_ro  = lkp_bem("BEUMC_S1", "RO")[[1]],
+    beu_ta  = lkp_bem("BEUMC_S1", "TA")[[1]],
+    beu_tc  = lkp_bem("BEUMC_S1", "TC")[[1]],
+    beu_tr  = lkp_bem("BEUMC_S1", "TR")[[1]],
+    beu_uv  = lkp_bem("BEUMC_S1", "UV")[[1]],
+    distcls_f = if ("DISTCLS_1" %in% names(x)) lkp_bem("DISTCLS_1", "F")[[1]] else NA_real_,
+    stand_b    = if ("STAND_A1" %in% names(x)) lkp_bem("STAND_A1", "B")[[1]]  else NA_real_,
+    stand_m    = if ("STAND_A1" %in% names(x)) lkp_bem("STAND_A1", "M")[[1]]  else NA_real_,
+    stand_c    = if ("STAND_A1" %in% names(x)) lkp_bem("STAND_A1", "C")[[1]]  else NA_real_,
+    stand_cm   = if ("STAND_A1" %in% names(x)) lkp_bem("STAND_A1", c("C", "M")) else integer(0),
+    stand_cb   = if ("STAND_A1" %in% names(x)) lkp_bem("STAND_A1", c("C", "B")) else integer(0),
+    stand_m_only = if ("STAND_A1" %in% names(x)) lkp_bem("STAND_A1", "M")      else integer(0)
   )
-  beumc_codes <- function(values) .terra_rrm_layer_codes(result, "BEUMC_S1", values, raster_conv$bem, strict = FALSE)
 
-  apply_rule <- function(mask, beumc_value, blank_components = TRUE, set_sdec1 = 10, set_sdec2 = NULL, set_sdec3 = NULL) {
-    beumc_code <- beumc_codes(beumc_value)[[1]]
-    if (is.na(beumc_code)) {
-      return(invisible(NULL))
-    }
+  layer_lookup <- .terra_rrm_component_layer_lookup()
+  field_groups <- .terra_rrm_component_field_groups()
 
-    state <<- .terra_rrm_apply_primary_beumc_rule(
-      x = result,
-      row_updated = row_updated,
-      blank_eco = blank_eco,
-      mask = mask,
-      beumc_code = beumc_code,
-      blank_components = blank_components,
-      set_sdec1 = set_sdec1,
-      set_sdec2 = set_sdec2,
-      set_sdec3 = set_sdec3
+  # Determine output file: use filename if provided, else a temp file.
+  # We always write to disk so the block loop has a clean output raster.
+  out_file  <- if (!is.null(filename)) filename else tempfile(fileext = ".tif")
+  out <- terra::rast(x)  # copy metadata/extent/crs, no data
+
+  terra::writeStart(out, filename = out_file, overwrite = TRUE,
+                    gdal = c("COMPRESS=DEFLATE", "TILED=YES", "BIGTIFF=IF_SAFER"))
+
+  b <- terra::blocks(x)
+  for (i in seq_len(b$n)) {
+    m <- terra::readValues(x, row = b$row[i], nrows = b$nrows[i], mat = TRUE)
+
+    m <- .blk_apply_vri_rules(
+      m           = m,
+      idx         = idx,
+      codes       = codes,
+      layer_lookup = layer_lookup,
+      field_groups = field_groups,
+      clear_site_ma = clear_site_ma,
+      use_ifelse  = use_ifelse
     )
-    result <<- state$x
-    row_updated <<- state$row_updated
-    blank_eco <<- state$blank_eco
+
+    terra::writeValues(out, m, row = b$row[i], nrows = b$nrows[i])
   }
+  terra::writeStop(out)
 
-  mask_base <- function() .terra_rrm_rule_mask(smpl_type_na, terra::ifel(is.na(row_updated), NA, terra::ifel(row_updated == 0, 1, 0)))
+  result <- terra::rast(out_file)
+  result <- set_raster_levels_from_conv(result, c(raster_conv$vri, raster_conv$bem))
 
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_1"]] == lv1_n, 1, NA), terra::ifel(result[["BCLCS_LV_5"]] == lv5_la, 1, NA), terra::ifel(result[["Area_Ha"]] <= 2, 1, NA)), "OW")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_1"]] == lv1_n, 1, NA), terra::ifel(result[["BCLCS_LV_5"]] == lv5_la, 1, NA), terra::ifel(result[["Area_Ha"]] > 2 & result[["Area_Ha"]] <= 60, 1, NA)), "LS")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_1"]] == lv1_n, 1, NA), terra::ifel(result[["BCLCS_LV_5"]] == lv5_la, 1, NA), terra::ifel(result[["Area_Ha"]] > 60, 1, NA)), "LL")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_1"]] == lv1_n, 1, NA), terra::ifel(result[["BCLCS_LV_5"]] == lv5_re, 1, NA)), "RE")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_1"]] == lv1_n, 1, NA), .terra_rrm_match_codes(result[["BCLCS_LV_5"]], lv5_ri_rs)), "RI")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_1"]] == lv1_v, 1, NA), terra::ifel(result[["BCLCS_LV_2"]] == lv2_n, 1, NA), terra::ifel(result[["BCLCS_LV_3"]] == lv3_w, 1, NA), terra::ifel(result[["AGE_CL_STS"]] == -1, 1, NA)), "WL")
-
-  wetland_state <- .terra_rrm_remove_inadequate_wetlands(result, row_updated)
-  result <- wetland_state$x
-  row_updated <- wetland_state$row_updated
-
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["SPEC_CD_1"]] == spec_sb, 1, NA), terra::ifel(result[["SPEC_PCT_1"]] >= 90, 1, NA)), "BB")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_5"]] == lv5_ap, 1, NA)), "UR")
-
-  mask_bu <- .terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_5"]] == lv5_bu, 1, NA))
-  result <- .terra_rrm_apply_constant(result, "SDEC_1", mask_bu, 10)
-  result <- .terra_rrm_apply_constant(result, "DISTCLS_1", mask_bu, .terra_rrm_layer_codes(result, "DISTCLS_1", c("F"), raster_conv$bem, strict = FALSE)[[1]])
-  row_updated <- terra::ifel(mask_bu[[1]], 1, row_updated)
-
-  apply_rule(.terra_rrm_rule_mask(mask_base(), .terra_rrm_match_codes(result[["SLOPE_MOD"]], slope_mod_qz)), "CL")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_5"]] == lv5_gb, 1, NA)), "GB")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), .terra_rrm_match_codes(result[["BCLCS_LV_5"]], lv5_gl_pn)), "GL")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_5"]] == lv5_gp, 1, NA)), "GP")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_5"]] == lv5_ll, 1, NA)), "LL")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), .terra_rrm_match_codes(result[["BCLCS_LV_5"]], lv5_mi)), "MI")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), .terra_rrm_match_codes(result[["BCLCS_LV_5"]], lv5_ro)), "RO")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_5"]] == lv5_ta, 1, NA)), "TA")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), .terra_rrm_match_codes(result[["BCLCS_LV_5"]], lv5_tc)), "TC")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_5"]] == lv5_tr, 1, NA)), "TR")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), .terra_rrm_match_codes(result[["BCLCS_LV_5"]], lv5_uv)), "UV")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), .terra_rrm_match_codes(result[["LAND_CD_1"]], land_uv), terra::ifel(result[["COV_PCT_1"]] >= 95, 1, NA)), "UV")
-  apply_rule(.terra_rrm_rule_mask(mask_base(), terra::ifel(result[["BCLCS_LV_5"]] == lv5_ur, 1, NA)), "UR")
-
-  mask_tc2 <- .terra_rrm_rule_mask(
-    mask_base(),
-    terra::ifel(result[["BCLCS_LV_2"]] == .terra_rrm_layer_codes(result, "BCLCS_LV_2", c("T"), raster_conv$vri)[[1]], 1, NA),
-    terra::ifel(result[["SDEC_1"]] == 10, 1, NA),
-    .terra_rrm_match_codes(result[["LBL_VEGCOV"]], lbl_rz)
-  )
-  result <- .terra_rrm_apply_constant(result, "SDEC_1", mask_tc2, 8)
-  result <- .terra_rrm_apply_constant(result, "SDEC_2", mask_tc2, 2)
-  result <- .terra_rrm_apply_constant(result, "BEUMC_S2", mask_tc2, beumc_codes("TC")[[1]])
-  row_updated <- terra::ifel(mask_tc2[[1]], 1, row_updated)
-
-  if ("STAND_A1" %in% names(result)) {
-    mask_stand_b <- .terra_rrm_rule_mask(
-      smpl_type_na,
-      .terra_rrm_match_codes(result[["SPEC_CD_1"]], deciduous_codes),
-      terra::ifel(result[["SPEC_PCT_1"]] >= 75, 1, NA),
-      .terra_rrm_match_codes(result[["STAND_A1"]], .terra_rrm_layer_codes(result, "STAND_A1", c("C", "M"), raster_conv$bem, strict = FALSE))
-    )
-    result <- .terra_rrm_apply_constant(result, "STAND_A1", mask_stand_b, .terra_rrm_layer_codes(result, "STAND_A1", "B", raster_conv$bem, strict = FALSE)[[1]])
-
-    mask_stand_m <- .terra_rrm_rule_mask(
-      smpl_type_na,
-      .terra_rrm_match_codes(result[["SPEC_CD_1"]], deciduous_codes),
-      terra::ifel(result[["SPEC_PCT_1"]] >= 50 & result[["SPEC_PCT_1"]] < 75, 1, NA),
-      .terra_rrm_match_codes(result[["STAND_A1"]], .terra_rrm_layer_codes(result, "STAND_A1", c("C", "B"), raster_conv$bem, strict = FALSE))
-    )
-    result <- .terra_rrm_apply_constant(result, "STAND_A1", mask_stand_m, .terra_rrm_layer_codes(result, "STAND_A1", "M", raster_conv$bem, strict = FALSE)[[1]])
-
-    mask_stand_c <- .terra_rrm_rule_mask(
-      smpl_type_na,
-      .terra_rrm_match_codes(result[["SPEC_CD_1"]], conifer_codes),
-      terra::ifel(result[["SPEC_PCT_1"]] >= 75, 1, NA),
-      .terra_rrm_match_codes(result[["STAND_A1"]], .terra_rrm_layer_codes(result, "STAND_A1", "M", raster_conv$bem, strict = FALSE))
-    )
-    result <- .terra_rrm_apply_constant(result, "STAND_A1", mask_stand_c, .terra_rrm_layer_codes(result, "STAND_A1", "C", raster_conv$bem, strict = FALSE)[[1]])
-  }
-
-  result <- .terra_rrm_blank_eco_fields(result, terra::ifel(blank_eco == 1, 1, NA))
+  # BEU/BEC correction pass: uses terra::values() on the final result only
   result <- .terra_rrm_apply_beu_bec_corrections(result, beu_bec)
 
   if (is.null(filename)) {
     return(result)
   }
 
+  # If a filename was requested, the block loop already wrote there.
+  # Re-write only if the beu_bec pass changed anything (it operates in-memory).
   terra::writeRaster(result, filename = filename, overwrite = overwrite)
   terra::rast(filename)
 }
@@ -1408,23 +1729,9 @@ terra_rrm_correct_bem_from_vri <- function(x,
 
       source_layer <- source_layers[[i]]
       replacement <- if (is.na(source_layer) || !source_layer %in% names(x)) {
-        suppressWarnings(
-          terra::app(
-            c(mask_layer, result[[target_layer]]),
-            fun = function(values) {
-              ifelse(!is.na(values[, 1]) & values[, 1] == 1, NA, values[, 2])
-            }
-          )
-        )
+        terra::ifel(mask_layer == 1, NA, result[[target_layer]])
       } else {
-        suppressWarnings(
-          terra::app(
-            c(mask_layer, x[[source_layer]], result[[target_layer]]),
-            fun = function(values) {
-              ifelse(!is.na(values[, 1]) & values[, 1] == 1, values[, 2], values[, 3])
-            }
-          )
-        )
+        terra::ifel(mask_layer == 1, x[[source_layer]], result[[target_layer]])
       }
 
       names(replacement) <- target_layer
