@@ -9,7 +9,7 @@ vribem_beu_rules_update <- function(conn, vri_bem, rules_tbl = "beu_update_rules
                          SPEC_PCT_5 = IFNULL(TRY_CAST(SPEC_PCT_5 AS DOUBLE), 0), 
                          SPEC_PCT_6 = IFNULL(TRY_CAST(SPEC_PCT_6 AS DOUBLE), 0)")
   
-  rules_colnames <- duckdb::dbListFields(conn, rules_tbl)
+  rules_colnames <- DBI::dbGetQuery(conn, sprintf("PRAGMA table_info('%s')", rules_tbl))$name
 
   tree_list_var <- grep("^TREE_RL_SP_CD_[0-9]$", rules_colnames)
   tree_pct_var <- grep("^TREE_RL_SP_PCT_[0-9]$", rules_colnames)
@@ -21,7 +21,7 @@ vribem_beu_rules_update <- function(conn, vri_bem, rules_tbl = "beu_update_rules
   rules_dt <- setDT(DBI::dbGetQuery(conn, sprintf("SELECT * FROM %s", rules_tbl)))
 
   # all rule column must appear in the vri_bem
-  rule_not_in_vri <- setdiff(rules_colnames[rule_columns], duckdb::dbListFields(conn, vri_bem))
+  rule_not_in_vri <- setdiff(rules_colnames[rule_columns], DBI::dbGetQuery(conn, sprintf("PRAGMA table_info('%s')", vri_bem))$name)
   if (length(rule_not_in_vri) > 0) {
     stop(paste0("Following rules are not a feature in vri-bem : ", rule_not_in_vri))
   }
@@ -56,7 +56,7 @@ vribem_beu_rules_update <- function(conn, vri_bem, rules_tbl = "beu_update_rules
   tree_list_var <- rules_colnames[tree_list_var]
   tree_pct_var <- rules_colnames[tree_pct_var]
 
-  vri_bem_colnames <- duckdb::dbListFields(conn, vri_bem)
+  vri_bem_colnames <- DBI::dbGetQuery(conn, sprintf("PRAGMA table_info('%s')", vri_bem))$name
   vri_bem_species_var <- grep("^SPEC_CD_[0-9]$", vri_bem_colnames, value = T)
   vri_bem_pct_var <- grep("^SPEC_PCT_[0-9]$", vri_bem_colnames, value = T)
 

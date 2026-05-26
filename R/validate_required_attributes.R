@@ -20,7 +20,7 @@ validate_required_attributes <- function(ifc, required_attributes){
 
 validate_views_column_names <- function(conn, obj, required_names) {
 
-  obj_columns <- duckdb::dbListFields(conn, obj)
+  obj_columns <- DBI::dbGetQuery(conn, sprintf("PRAGMA table_info('%s')", obj))$name
   missing_cols <- setdiff(required_names, obj_columns)
 
   if (length(missing_cols) > 0) {

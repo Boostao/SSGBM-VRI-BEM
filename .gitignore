@@ -4,3 +4,4 @@
 .Ruserdata
 data-raw/BCDATA
 *.tif
+duckdb_tmp/

@@ -55,15 +55,10 @@ make_test_table <- function(conn,
                             beumc_s1 = "AT",
                             beumc_s2 = NA_character_,
                             beumc_s3 = NA_character_,
-                            bgc_zone = "SBS",
-                            crs_wkt  = NULL) {
+                            bgc_zone = "SBS") {
 
   # Polygon covering raster extent (EPSG:32610)
   poly_wkt <- "POLYGON ((500000 5000000, 500100 5000000, 500100 5000100, 500000 5000100, 500000 5000000))"
-
-  if (!is.null(crs_wkt)) {
-    srid_clause <- sprintf(", ST_GeomFromText('%s')", poly_wkt)
-  }
 
   beumc_s2_sql <- if (is.na(beumc_s2)) "NULL" else sprintf("'%s'", beumc_s2)
   beumc_s3_sql <- if (is.na(beumc_s3)) "NULL" else sprintf("'%s'", beumc_s3)
@@ -89,7 +84,7 @@ make_test_table <- function(conn,
 run_and_fetch <- function(conn, tbl_name, rasters,
                           elevation_threshold = 1500,
                           result_tbl = "VRIBEM_ELEV_RESULT") {
-  merge_elevation_duckdb(
+  ssgbm::merge_elevation_duckdb(
     conn               = conn,
     vri_bem_tbl        = tbl_name,
     elev_raster        = rasters$elev,
@@ -97,7 +92,7 @@ run_and_fetch <- function(conn, tbl_name, rasters,
     terrain_raster     = rasters$terrain,
     result_tbl         = result_tbl
   )
-  DBI::dbGetQuery(conn, sprintf("SELECT * FROM %s", result_tbl))
+  DBI::dbGetQuery(conn, sprintf("SELECT * EXCLUDE (Shape) FROM %s", result_tbl))
 }
 
 # ---------------------------------------------------------------------------
@@ -313,7 +308,7 @@ test_that("result table exists in DuckDB after function call", {
   make_test_table(conn, beumc_s1 = "AT", bgc_zone = "SBS")
 
   out_tbl <- "MY_RESULT_TBL"
-  returned_name <- merge_elevation_duckdb(
+  returned_name <- ssgbm::merge_elevation_duckdb(
     conn               = conn,
     vri_bem_tbl        = "VRI_BEM_TEST",
     elev_raster        = rasters$elev,
@@ -323,7 +318,46 @@ test_that("result table exists in DuckDB after function call", {
   )
 
   expect_equal(returned_name, out_tbl)
-  expect_true(DBI::dbExistsTable(conn, out_tbl))
+  expect_true(DBI::dbGetQuery(conn, sprintf(
+    "SELECT count(*) > 0 AS found FROM duckdb_tables() WHERE table_name = '%s'",
+    out_tbl
+  ))$found)
+  DBI::dbDisconnect(conn, shutdown = TRUE)
+})
+
+test_that("merge_elevation_duckdb rasterizes polygon ids in batches", {
+  conn <- make_test_conn()
+  rasters <- make_uniform_raster(elev_val = 1600, slope_val_deg = 30, aspect_val_deg = 90)
+  old_opt <- options(
+    ssgbm.merge_elevation_batch_size = 1L,
+    ssgbm.merge_elevation_export_blocks = 2L
+  )
+  on.exit(options(old_opt), add = TRUE)
+
+  DBI::dbExecute(conn, "
+    CREATE OR REPLACE TEMP TABLE VRI_BEM_BATCH_TEST AS
+    SELECT * FROM (
+      SELECT
+        'AT'::VARCHAR AS BEUMC_S1,
+        NULL::VARCHAR AS BEUMC_S2,
+        NULL::VARCHAR AS BEUMC_S3,
+        'SBS'::VARCHAR AS BGC_ZONE,
+        ST_GeomFromText('POLYGON ((500000 5000000, 500050 5000000, 500050 5000100, 500000 5000100, 500000 5000000))') AS Shape
+      UNION ALL
+      SELECT
+        'AT'::VARCHAR AS BEUMC_S1,
+        NULL::VARCHAR AS BEUMC_S2,
+        NULL::VARCHAR AS BEUMC_S3,
+        'SBS'::VARCHAR AS BGC_ZONE,
+        ST_GeomFromText('POLYGON ((500050 5000000, 500100 5000000, 500100 5000100, 500050 5000100, 500050 5000000))') AS Shape
+    ) src
+  ")
+
+  res <- run_and_fetch(conn, "VRI_BEM_BATCH_TEST", rasters, result_tbl = "VRI_BEM_BATCH_RESULT")
+
+  expect_equal(nrow(res), 2L)
+  expect_equal(res$ELEV, c(1600, 1600), tolerance = 1e-6)
+  expect_equal(res$ABOVE_ELEV_THOLD, c("Y", "Y"))
   DBI::dbDisconnect(conn, shutdown = TRUE)
 })
 

@@ -77,7 +77,7 @@ run_merge <- function(conn,
     tolerance_m2 = tolerance,
     result_tbl   = result_tbl
   )
-  DBI::dbGetQuery(conn, sprintf("SELECT * FROM %s", result_tbl))
+  DBI::dbGetQuery(conn, sprintf("SELECT * EXCLUDE (Shape) FROM %s", result_tbl))
 }
 
 # ---------------------------------------------------------------------------
@@ -89,7 +89,7 @@ test_that("result table is created in the database", {
   make_vri_tbl(conn)
   make_ccb_tbl(conn)
   merge_ccb_duckdb(conn, "VRIBEM_TEST", "CCB_TEST", result_tbl = "RES")
-  expect_true(DBI::dbExistsTable(conn, "RES"))
+  expect_true(DBI::dbGetQuery(conn, "SELECT count(*) > 0 AS found FROM duckdb_tables() WHERE table_name = 'RES'")$found)
   DBI::dbDisconnect(conn, shutdown = TRUE)
 })
 
@@ -98,7 +98,7 @@ test_that("result table contains VRI and CCB attribute columns plus Shape", {
   make_vri_tbl(conn)
   make_ccb_tbl(conn)
   merge_ccb_duckdb(conn, "VRIBEM_TEST", "CCB_TEST", result_tbl = "RES")
-  cols <- DBI::dbGetQuery(conn, "SELECT * FROM RES LIMIT 0") |> names()
+  cols <- DBI::dbGetQuery(conn, "PRAGMA table_info('RES')")$name
   expect_true("VRI_ATTR"    %in% cols)
   expect_true("HARVEST_YEAR" %in% cols)
   expect_true("Shape"        %in% cols)

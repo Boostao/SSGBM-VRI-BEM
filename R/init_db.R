@@ -5,7 +5,20 @@
 #'   in RAM.
 #' @param ask Boolean, whether to ask before re-initializing existing tables.
 #' @param bem_dsn data source name for BEM data.
-#' @param bem_dsn data source name for BEM data.
+#' @param pem_dsn data source name for PEM data.
+#' @param temp_dir Optional character path for DuckDB's temp directory (used
+#'   for spill-to-disk during large spatial queries).  Created automatically
+#'   if it does not exist.  When `NULL` (default) the DuckDB default is used.
+#' @param threads Optional integer number of threads for DuckDB to use.
+#'   Defaults to `parallel::detectCores()` when `NULL`.
+#' @param memory_limit Optional DuckDB memory limit string, e.g. `"8GB"`.
+#'   When `NULL` (default) the DuckDB default (~80\% of RAM) applies.  Set to
+#'   ~70\% of available RAM for large AOIs to leave headroom for R and terra.
+#' @param force_unlock Logical. When `TRUE`, and DuckDB reports that the
+#'   database file is locked by another process with a specific PID, terminate
+#'   that process and retry opening the database once. This is intentionally
+#'   forceful and should only be used when it is safe to kill the locking
+#'   process. Default `FALSE`.
 #' @export
 #' @import duckdb
 #' @details This needs to be run once to create the database and load the
@@ -14,7 +27,7 @@
 init_db <- function(dbdir = defdb(),
                     ask = interactive(),
                     bem_dsn = NULL,
-                    prem_dsn = NULL) {
+                    pem_dsn = NULL) {
   conn <- init_conn(dbdir)
   init_vri(conn, ask = ask)
   if (!is.null(bem_dsn) || tbl_exists(conn, "BEM")) {
@@ -30,7 +43,7 @@ init_db <- function(dbdir = defdb(),
   init_ccb(conn, ask = ask)
   init_burn(conn, ask = ask)
   init_fire(conn, ask = ask)
-  init_pem(conn, ask = ask, dsn = prem_dsn)
+  init_pem(conn, ask = ask, dsn = pem_dsn)
   init_tsa(conn, ask = ask)
   duckdb::dbDisconnect(conn, shutdown = TRUE)
 }
@@ -70,8 +83,7 @@ init_vri <- function(conn = init_conn(),
     if (interactive() && ask) {
       answer <- readline("Re-initialize VRI table (deletes all data)? (y/n): ")
       if (tolower(answer) %in% c("y", "yes")) {
-        duckdb::dbSendQuery(conn, "DROP TABLE IF EXISTS VRI;") |>
-          duckdb::dbClearResult()
+        DBI::dbExecute(conn, "DROP TABLE IF EXISTS VRI;")
       } else {
         logger::log_info("Skipping VRI initialization.")
         return(invisible())
@@ -134,7 +146,7 @@ init_vri <- function(conn = init_conn(),
 
   logger::log_info("Loading VRI into duckdb database.")
 
-  duckdb::dbSendQuery(
+  DBI::dbExecute(
     conn,
     "
     CREATE OR REPLACE TABLE VRI AS (
@@ -143,16 +155,12 @@ init_vri <- function(conn = init_conn(),
       sprintf(paste0(
         paste(names(vri_vars), vri_vars) |> trimws(), collapse = ","
       ), vri_geom, dsn, layer)
-  ) |>
-    duckdb::dbClearResult()
+  )
 
   logger::log_info("Creating VRI spatial index.")
 
-  duckdb::dbSendQuery(conn,
-                      "
-    DROP INDEX IF EXISTS VRI_IDX;
-    CREATE INDEX VRI_IDX ON VRI USING RTREE (Shape);") |>
-    duckdb::dbClearResult()
+  DBI::dbExecute(conn, "DROP INDEX IF EXISTS VRI_IDX;")
+  DBI::dbExecute(conn, "CREATE INDEX VRI_IDX ON VRI USING RTREE (Shape);")
 
   logger::log_info("VRI initialization complete.")
 
@@ -164,15 +172,14 @@ init_vri <- function(conn = init_conn(),
 init_bem <- function(conn = init_conn(),
                      ask = interactive(),
                      dsn = NULL,
-                     layer = "BEM",
-                     geom = "geom") {
+                     layer = sf::st_layers(dsn)$name[1],
+                     geom = "shape") {
   if (tbl_exists(conn, "BEM")) {
     logger::log_info("BEM table already exists in database.")
     if (interactive() && ask) {
       answer <- readline("Re-initialize BEM table (deletes all data)? (y/n): ")
       if (tolower(answer) %in% c("y", "yes")) {
-        duckdb::dbSendQuery(conn, "DROP TABLE IF EXISTS BEM;") |>
-          duckdb::dbClearResult()
+        DBI::dbExecute(conn, "DROP TABLE IF EXISTS BEM;")
       } else {
         logger::log_info("Skipping BEM initialization.")
         return(invisible())
@@ -204,17 +211,13 @@ init_bem <- function(conn = init_conn(),
 
   logger::log_info("Loading BEM into duckdb database.")
 
-  bem_vars <- duckdb::dbSendQuery(
-    conn, "
-    SELECT * FROM ST_Read('%s', layer := '%s') LIMIT 0;
-    " |>
-      sprintf(dsn, layer)
-  ) |>
-    duckdb::dbFetch() |>
-    names() |>
-    setdiff(geom)
+  bem_vars <- DBI::dbGetQuery(
+    conn,
+    sprintf("DESCRIBE SELECT * FROM ST_Read('%s', layer := '%s');", dsn, layer)
+  )$column_name |>
+    (\(x) x[!tolower(x) %in% tolower(geom)])()
 
-  duckdb::dbSendQuery(
+  DBI::dbExecute(
     conn,
     "
     CREATE OR REPLACE TABLE BEM AS (
@@ -223,16 +226,32 @@ init_bem <- function(conn = init_conn(),
       sprintf(paste0(
         paste(names(bem_vars), bem_vars) |> trimws(), collapse = ","
       ), bem_geom, dsn, layer)
-  ) |>
-    duckdb::dbClearResult()
-
+  )
+  # Deduplicate by TEIS_ID: the source GDB/shapefile can contain multiple
+  # features with the same TEIS_ID.  Keep only the first occurrence per ID
+  # (minimum rowid) so that downstream joins on V_BEM produce clean one-to-one
+  # matches.
+  n_dup <- DBI::dbGetQuery(
+    conn,
+    "SELECT count(*) AS n FROM (SELECT TEIS_ID FROM BEM GROUP BY TEIS_ID HAVING count(*) > 1)"
+  )$n
+  if (n_dup > 0L) {
+    warning(
+      sprintf(
+        "init_bem: %d duplicate TEIS_ID(s) found in source data \u2014 keeping first occurrence per ID.",
+        n_dup
+      ),
+      call. = FALSE
+    )
+    DBI::dbExecute(
+      conn,
+      "DELETE FROM BEM WHERE rowid NOT IN (SELECT MIN(rowid) FROM BEM GROUP BY TEIS_ID)"
+    )
+  }
   logger::log_info("Creating BEM spatial index.")
 
-  duckdb::dbSendQuery(conn,
-                      "
-    DROP INDEX IF EXISTS BEM_IDX;
-    CREATE INDEX BEM_IDX ON BEM USING RTREE (Shape);") |>
-    duckdb::dbClearResult()
+  DBI::dbExecute(conn, "DROP INDEX IF EXISTS BEM_IDX;")
+  DBI::dbExecute(conn, "CREATE INDEX BEM_IDX ON BEM USING RTREE (Shape);")
 
   logger::log_info("BEM initialization complete.")
 
@@ -248,7 +267,8 @@ init_generic <- function(conn = init_conn(),
                          recordid,
                          filter1 = identity,
                          .include = c(),
-                         tablename) {
+                         tablename,
+                         geom_as_wkt = FALSE) {
   if (tbl_exists(conn, tablename)) {
     logger::log_info("%s table already exists in database." |>
                        sprintf(tablename))
@@ -256,9 +276,8 @@ init_generic <- function(conn = init_conn(),
       answer <- readline("Re-initialize %s table (deletes all data)? (y/n): " |>
                            sprintf(tablename))
       if (tolower(answer) %in% c("y", "yes")) {
-        duckdb::dbSendQuery(conn, "DROP TABLE IF EXISTS %s;" |>
-                              sprintf(tablename)) |>
-          duckdb::dbClearResult()
+        DBI::dbExecute(conn, "DROP TABLE IF EXISTS %s;" |>
+                              sprintf(tablename))
       } else {
         logger::log_info("Skipping %s initialization." |> sprintf(tablename))
         return(invisible())
@@ -272,7 +291,11 @@ init_generic <- function(conn = init_conn(),
     }
   }
 
-  gen_geom <- "ST_GeomFromWKB(ST_AsWKB(%s)) Shape" |> sprintf(geom)
+  gen_geom <- if (geom_as_wkt) {
+    "ST_AsText(%s) Shape" |> sprintf(geom)
+  } else {
+    "ST_GeomFromWKB(ST_AsWKB(%s)) Shape" |> sprintf(geom)
+  }
 
   # If dsn is null read information from bcdata
   if (is.null(dsn)) {
@@ -291,8 +314,13 @@ init_generic <- function(conn = init_conn(),
 
     layer_proj4 <- meta_proj4(dsn[1], geom_f = geom)
     if (layer_proj4 != target_proj4) {
-      gen_geom <- "ST_GeomFromWKB(ST_AsWKB(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)))) Shape" |>
-        sprintf(geom, layer_proj4, target_proj4)
+      gen_geom <- if (geom_as_wkt) {
+        "ST_AsText(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true))) Shape" |>
+          sprintf(geom, layer_proj4, target_proj4)
+      } else {
+        "ST_GeomFromWKB(ST_AsWKB(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)))) Shape" |>
+          sprintf(geom, layer_proj4, target_proj4)
+      }
     }
     query <- "SELECT %s FROM (%s)" |>
       sprintf(
@@ -313,8 +341,13 @@ init_generic <- function(conn = init_conn(),
       meta_proj4(dsn, geom_f = geom)
     }
     if (layer_proj4 != target_proj4) {
-      gen_geom <- "ST_GeomFromWKB(ST_AsWKB(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)))) Shape" |>
-        sprintf(geom, layer_proj4, target_proj4)
+      gen_geom <- if (geom_as_wkt) {
+        "ST_AsText(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true))) Shape" |>
+          sprintf(geom, layer_proj4, target_proj4)
+      } else {
+        "ST_GeomFromWKB(ST_AsWKB(ST_MakeValid(ST_Transform(%s, '%s', '%s', always_xy := true)))) Shape" |>
+          sprintf(geom, layer_proj4, target_proj4)
+      }
     }
     query <- if (!is.null(layer)) {
       "SELECT %s FROM ST_Read('%s', layer := '%s')" |>
@@ -327,22 +360,15 @@ init_generic <- function(conn = init_conn(),
 
   logger::log_info("Loading %s into duckdb database." |> sprintf(tablename))
 
-  duckdb::dbSendQuery(conn,
+  DBI::dbExecute(conn,
                       "CREATE OR REPLACE TABLE %s AS (%s);" |>
-                        sprintf(tablename, query)) |>
-    duckdb::dbClearResult()
+                        sprintf(tablename, query))
 
-  logger::log_info("Creating %s spatial index." |> sprintf(tablename))
-
-  duckdb::dbSendQuery(
-    conn,
-    "
-    DROP INDEX IF EXISTS %s_IDX;
-    CREATE INDEX %s_IDX ON %s USING RTREE (Shape);
-    " |>
-      sprintf(tablename, tablename, tablename)
-  ) |>
-    duckdb::dbClearResult()
+  if (!geom_as_wkt) {
+    logger::log_info("Creating %s spatial index." |> sprintf(tablename))
+    DBI::dbExecute(conn, "DROP INDEX IF EXISTS %s_IDX;" |> sprintf(tablename))
+    DBI::dbExecute(conn, "CREATE INDEX %s_IDX ON %s USING RTREE (Shape);" |> sprintf(tablename, tablename))
+  }
 
   logger::log_info("%s initialization complete." |> sprintf(tablename))
 
@@ -468,7 +494,7 @@ init_burn <- function(conn = init_conn(),
 init_pem <- function(conn = init_conn(), 
                      ask = interactive(),
                      dsn = NULL,
-                     layer = "PEM_Mar2026",
+                     layer = sf::st_layers(dsn)$name[1],
                      geom = "geom") {
   init_generic(conn,
                ask,
@@ -492,7 +518,8 @@ init_fire <- function(conn = init_conn(),
                layer,
                geom,
                recordid = "22c7cb44-1463-48f7-8e47-88857f207702",
-               tablename = "FIRE")
+               tablename = "FIRE", 
+               .include = c("FIRE_YEAR"))
 }
 
 #' @param tsa_name Character vector.
@@ -518,7 +545,8 @@ init_tsa <- function(conn = init_conn(),
     recordid = "8daa29da-d7f4-401c-83ae-d962e3a28980",
     filter1 = filter1,
     .include = "TSA_NUMBER_DESCRIPTION",
-    tablename = "TSA"
+    tablename = "TSA",
+    geom_as_wkt = TRUE
   )
 
   # make sure aoi within Skeena boundary (if needed)
@@ -532,31 +560,101 @@ init_tsa <- function(conn = init_conn(),
       recordid = "dfc492c0-69c5-4c20-a6de-2c9bc999301f",
       filter1 = filter1,
       .include = "ORG_UNIT_NAME",
-      tablename = "SKEENA"
+      tablename = "SKEENA",
+      geom_as_wkt = TRUE
     )
   }
 }
 
+#' @noRd
+.open_duckdb_connection <- function(dbdir, cfg) {
+  try(
+    duckdb::dbConnect(duckdb::duckdb(dbdir = dbdir, config = cfg)),
+    silent = TRUE
+  )
+}
+
+#' @noRd
+.duckdb_locking_pid <- function(msg) {
+  m <- regexec("\\(PID ([0-9]+)\\)", msg)
+  parts <- regmatches(msg, m)[[1L]]
+  if (length(parts) < 2L) return(NA_integer_)
+  as.integer(parts[2L])
+}
+
+#' @noRd
+.terminate_pid <- function(pid) {
+  if (is.na(pid) || length(pid) != 1L) return(FALSE)
+  if (.Platform$OS.type == "windows") {
+    status <- tryCatch(
+      suppressWarnings(system2(
+        "taskkill", c("/PID", as.character(pid), "/F", "/T"),
+        stdout = FALSE, stderr = FALSE
+      )),
+      error = function(e) 1L
+    )
+  } else {
+    status <- tryCatch(
+      suppressWarnings(system2(
+        "kill", c("-9", as.character(pid)), stdout = FALSE, stderr = FALSE
+      )),
+      error = function(e) 1L
+    )
+  }
+  is.numeric(status) && identical(as.integer(status), 0L)
+}
+
 #' @export
 #' @rdname init
-init_conn <- function(dbdir = defdb()) {
-  conn <- try(duckdb::dbConnect(duckdb::duckdb(dbdir = dbdir)), silent = TRUE)
+init_conn <- function(dbdir = defdb(), temp_dir = NULL, threads = NULL, memory_limit = NULL,
+                      force_unlock = FALSE) {
+  cfg <- list(storage_compatibility_version = "v1.5.0")
+  if (!is.null(temp_dir)) {
+    dir.create(temp_dir, showWarnings = FALSE, recursive = TRUE)
+    cfg$temp_directory <- normalizePath(temp_dir, mustWork = FALSE)
+  }
+  conn <- .open_duckdb_connection(dbdir, cfg)
   if (inherits(conn, "try-error")) {
-    if (grepl("Missing Extension", conditionMessage(attr(conn, "condition")))) {
+    msg <- conditionMessage(attr(conn, "condition"))
+    if (grepl("Missing Extension", msg)) {
       if (file.exists(paste0(dbdir, ".wal"))) {
         answer <- readline("Stale .wal lock file detected. Delete it? (y/n/c): ")
         if (tolower(answer) %in% c("y", "yes")) {
           unlink(paste0(dbdir, ".wal"))
-          conn <- duckdb::dbConnect(duckdb::duckdb(dbdir = dbdir))
+          conn <- .open_duckdb_connection(dbdir, cfg)
         } else {
           logger::log_error("Could not create a connection to the database.")
           return(invisible())
         }
       }
     }
+    if (inherits(conn, "try-error") && isTRUE(force_unlock)) {
+      pid <- .duckdb_locking_pid(msg)
+      if (!is.na(pid)) {
+        logger::log_warn(
+          "init_conn: database file is locked by PID {pid}; terminating it because force_unlock=TRUE"
+        )
+        if (.terminate_pid(pid)) {
+          conn <- .open_duckdb_connection(dbdir, cfg)
+        } else {
+          stop(
+            sprintf("init_conn: failed to terminate locking process PID %d for %s", pid, dbdir),
+            call. = FALSE
+          )
+        }
+      }
+    }
   }
-  duckdb::dbSendQuery(conn, "INSTALL spatial; LOAD spatial;") |>
-    duckdb::dbClearResult()
+  if (inherits(conn, "try-error")) {
+    stop(conditionMessage(attr(conn, "condition")), call. = FALSE)
+  }
+  DBI::dbExecute(conn, "INSTALL spatial; LOAD spatial;")
+  # Apply thread / memory tuning.  threads defaults to all logical cores;
+  # memory_limit must be a DuckDB size string e.g. '8GB' or NULL to leave
+  # the DuckDB default (~80 % of RAM) in place.
+  n_threads <- if (!is.null(threads)) threads else parallel::detectCores()
+  if (!is.na(n_threads)) DBI::dbExecute(conn, paste0("SET threads TO ", n_threads, ";"))
+  if (!is.null(memory_limit)) DBI::dbExecute(conn, paste0("SET memory_limit = '", memory_limit, "';"))
   return(conn)
 }
 
@@ -655,7 +753,7 @@ meta_proj4 <- function(dsn, layer, geom_f) {
   on.exit(duckdb::dbDisconnect(conn), add = TRUE)
 
   expr <- expression({
-    duckdb::dbSendQuery(conn, "
+    DBI::dbGetQuery(conn, "
     SELECT *
     FROM ST_Read_Meta([%s])" |> sprintf(paste0("'", dsn, "'", collapse = ",")))
   })
@@ -665,7 +763,6 @@ meta_proj4 <- function(dsn, layer, geom_f) {
     res <- try(eval(expr), silent = TRUE)
   }
 
-  res <- res |> duckdb::dbFetch()
 
   if (!length(res$layers)) {
     logger::log_warn(sprintf("No layer found in dsn for proj4 [%s].", dsn))
@@ -704,7 +801,7 @@ meta_proj4 <- function(dsn, layer, geom_f) {
       geom_f
     ))
   } else {
-    g <- which(geom_f == vapply(res$layers[[l]]$geometry_fields, `[[`, character(1), "name"))
+    g <- which(tolower(geom_f) == tolower(vapply(res$layers[[l]]$geometry_fields, `[[`, character(1), "name")))
     if (!length(g)) {
       logger::log_warn(sprintf(
         "Specified geometry field not found in layer for proj4 [%s: %s].",

@@ -230,9 +230,9 @@ merge_unique_ecosystem_fields_duckdb <- function(conn,
   ))
 
   # ── 8. STD_VRI (add_std_crown_fields — species percentage logic) ──────────
-  existing_cols <- toupper(names(DBI::dbGetQuery(
-    conn, sprintf("SELECT * FROM %s LIMIT 0", v)
-  )))
+  existing_cols <- toupper(DBI::dbGetQuery(
+    conn, sprintf("PRAGMA table_info('%s')", v)
+  )$name)
 
   if (all(c("SPEC_CD_1", "SPEC_PCT_1") %in% existing_cols)) {
     b_sp <- paste0(

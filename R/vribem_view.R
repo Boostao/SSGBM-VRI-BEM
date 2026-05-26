@@ -9,7 +9,7 @@
 vribem_view <- function(conn, validate_intersect = FALSE) {
 
   # check if BEM contains duplicate TEIS_ID
-  res <- duckdb::dbSendQuery(conn, "
+  res <- DBI::dbGetQuery(conn, "
   SELECT COUNT(1) NB
   FROM (
     SELECT TEIS_ID,
@@ -17,16 +17,46 @@ vribem_view <- function(conn, validate_intersect = FALSE) {
     FROM V_BEM
     GROUP BY TEIS_ID
     HAVING COUNT(1) > 1
-  )") |>
-    duckdb::dbFetch()
+  )")
   if (res$NB > 0) {
-    logger::log_error("Duplicate values of TEIS_ID found in BEM table. Check the source and reload with `init_bem()`.")
+    warning(
+      sprintf(
+        "vribem_view: %d duplicate TEIS_ID(s) found in V_BEM — deduplicating in-place (keeping first occurrence). Consider reloading BEM with `init_bem()`.",
+        res$NB
+      ),
+      call. = FALSE
+    )
+    # V_BEM is a persistent TABLE when filtered_views() ran with materialize=TRUE
+    # (the default).  For the materialize=FALSE view case we replace the view
+    # with a one-time deduplicated TEMP TABLE so the join below is always clean.
+    # Check views first: a TEMP VIEW shadows a base TABLE of the same name, so
+    # duckdb_tables() would still report the base TABLE as present even when a
+    # VIEW is actually in scope.
+    is_view <- nrow(DBI::dbGetQuery(
+      conn,
+      "SELECT 1 FROM duckdb_views() WHERE view_name = 'V_BEM'"
+    )) > 0L
+    if (!is_view) {
+      DBI::dbExecute(
+        conn,
+        "DELETE FROM V_BEM WHERE rowid NOT IN (SELECT MIN(rowid) FROM V_BEM GROUP BY TEIS_ID)"
+      )
+    } else {
+      # View path: materialise a deduplicated copy, drop the view, expose it
+      # under the same name so all downstream references still work.
+      DBI::dbExecute(conn,
+        "CREATE TEMP TABLE _v_bem_dedup AS
+         SELECT * FROM V_BEM
+         QUALIFY ROW_NUMBER() OVER (PARTITION BY TEIS_ID ORDER BY (SELECT NULL)) = 1")
+      DBI::dbExecute(conn, "DROP VIEW IF EXISTS V_BEM")
+      DBI::dbExecute(conn, "ALTER TABLE _v_bem_dedup RENAME TO V_BEM")
+    }
   }
 
-  vri_columns <- DBI::dbListFields(conn, "VRI") |> setdiff("Shape")
-  bem_columns <- DBI::dbListFields(conn, "BEM") |> setdiff("Shape")
+  vri_columns <- DBI::dbGetQuery(conn, "PRAGMA table_info('VRI')")$name |> setdiff("Shape")
+  bem_columns <- DBI::dbGetQuery(conn, "PRAGMA table_info('BEM')")$name |> setdiff("Shape")
 
-  duckdb::dbSendQuery(conn, paste0("
+  DBI::dbExecute(conn, paste0("
     CREATE OR REPLACE TEMP VIEW V_VRIBEM AS ( 
       SELECT * , 
         round(ST_Area(a.Shape)/10000, 2) AS Area_Ha,
@@ -64,7 +94,7 @@ vribem_view <- function(conn, validate_intersect = FALSE) {
   
 
   if (isTRUE(validate_intersect)) {
-    duckdb::dbSendQuery(conn, "
+    DBI::dbExecute(conn, "
       CREATE OR REPLACE TEMP VIEW V_MISSINGBEM AS (
         SELECT V1.FEATURE_ID
         FROM V_VRI V1
@@ -73,7 +103,7 @@ vribem_view <- function(conn, validate_intersect = FALSE) {
         WHERE V2.FEATURE_ID IS NULL
       );
     ")
-    fid <- duckdb::dbSendQuery(conn, "SELECT FEATURE_ID FROM V_MISSINGBEM") |> duckdb::dbFetch()
+    fid <- DBI::dbGetQuery(conn, "SELECT FEATURE_ID FROM V_MISSINGBEM")
     .n <- length(fid$FEATURE_ID)
     msg <- if (length(fid$FEATURE_ID) > 50) " (first 50)" else ""
     if (nchar(msg)) fid <- head(fid, 50)

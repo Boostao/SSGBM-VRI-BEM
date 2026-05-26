@@ -260,6 +260,16 @@ test_that("init_tsa skips TSA initialisation when table already exists and ask=F
   expect_equal(result$TSA_NUMBER_DESCRIPTION, "Existing TSA")
 })
 
+test_that(".duckdb_locking_pid parses lock-holder PID from DuckDB error text", {
+  msg <- paste(
+    'Cannot open file "C:\\path\\to\\ssgbm.duckdb": file is already open.',
+    'File is already open in C:\\PROGRA~1\\R\\R-45~1.3\\bin\\x64\\Rterm.exe (PID 12820)'
+  )
+
+  expect_equal(ssgbm:::.duckdb_locking_pid(msg), 12820L)
+  expect_true(is.na(ssgbm:::.duckdb_locking_pid("no pid here")))
+})
+
 test_that("init_tsa skips initialisation of both TSA and SKEENA when both tables exist", {
   conn <- make_conn()
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
