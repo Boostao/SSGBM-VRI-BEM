@@ -27,12 +27,7 @@ download_db_layers(
   overwrite = FALSE
 )
 
-download_vri(
-  path,
-  dsn = NULL,
-  layer = "VEG_COMP_LYR_R1_POLY",
-  overwrite = FALSE
-)
+download_vri(path, dsn = NULL, layer = "fc", overwrite = FALSE)
 
 download_bem(path, dsn, layer = "BEM", overwrite = FALSE)
 
@@ -49,7 +44,7 @@ download_lakes(path, dsn = NULL, layer = "FWA_LAKES_POLY", overwrite = FALSE)
 
 download_glaciers(path, dsn = NULL, layer = "BTM_PLU_V1", overwrite = FALSE)
 
-download_ccb(path, dsn = NULL, layer = "Cut_Block_all_BC", overwrite = FALSE)
+download_ccb(path, dsn = NULL, layer = "CNS_CUT_BL_polygon", overwrite = FALSE)
 
 download_burn(
   path,

@@ -29,10 +29,10 @@
 #' @param mem_limit Character. DuckDB memory limit string (e.g. `"6GB"`) to
 #'   use as a floor for the spatial batch operations. If the current connection
 #'   limit is already higher, it is left unchanged. By the time this function is
-#'   called the buffer pool may be near-full from prior steps (V\_VRI, VRIBEM,
-#'   etc.), leaving no headroom for even a small ST\_Intersection allocation.
+#'   called the buffer pool may be near-full from prior steps (`V_VRI`, `VRIBEM`,
+#'   etc.), leaving no headroom for even a small `ST_Intersection` allocation.
 #'   Raising the limit lets DuckDB evict clean (checkpointed) pages from the
-#'   V\_ tables on demand. Restored to the original value when the function
+#'   `V_` tables on demand. Restored to the original value when the function
 #'   returns. Default `"6GB"`.
 #' @param result_tbl Character. Name of the (temp) table written to `conn`
 #'   with the corrected result.  Defaults to `"VRIBEM_CORRECTIONS"`, which

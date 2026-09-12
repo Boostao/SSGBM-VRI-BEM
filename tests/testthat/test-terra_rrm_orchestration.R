@@ -31,6 +31,7 @@ test_that("terra_rrm_prepare_ecosystem_stack runs stages in the expected order",
     "terra_rrm_correct_bem_from_wetlands",
     "terra_rrm_correct_bem_from_wetlands_riparian_stage",
     "terra_rrm_apply_rules",
+    "terra_rrm_add_ecosystem_keys",
     "terra_rrm_calc_forest_age_class",
     "terra_rrm_merge_unique_ecosystem_fields",
     "terra_rrm_find_crown_area_dominant_values"
@@ -58,6 +59,10 @@ test_that("terra_rrm_prepare_ecosystem_stack runs stages in the expected order",
     stub_state$calls <- c(stub_state$calls, "rules")
     x
   }, envir = fn_env)
+  assign("terra_rrm_add_ecosystem_keys", function(x, ...) {
+    stub_state$calls <- c(stub_state$calls, "keys")
+    x
+  }, envir = fn_env)
   assign("terra_rrm_calc_forest_age_class", function(x, most_recent_harvest_year, ...) {
     stub_state$calls <- c(stub_state$calls, paste0("age:", most_recent_harvest_year))
     x
@@ -80,7 +85,7 @@ test_that("terra_rrm_prepare_ecosystem_stack runs stages in the expected order",
   )
 
   expect_s4_class(result, "SpatRaster")
-  expect_equal(stub_state$calls, c("vri", "lakes:lakes", "wetlands", "riparian", "rules", "age:2024", "merge", "crown"))
+  expect_equal(stub_state$calls, c("vri", "lakes:lakes", "wetlands", "riparian", "rules", "keys", "age:2024", "merge", "crown"))
 })
 
 test_that("terra_rrm_create_RRM_ecosystem returns requested summaries and optional stack", {

@@ -8,7 +8,11 @@ filtered_views(
   conn = init_conn(),
   wkt_filter,
   tables = c("BEM", "BURN", "CCB", "FIRE", "GLACIERS", "LAKES", "RIVERS", "VRI",
-    "WETLANDS")
+    "WETLANDS"),
+  materialize = TRUE,
+  build_spatial_index = TRUE,
+  large_table_rows = 1e+06,
+  vri_mem_limit = "6GB"
 )
 }
 \arguments{
@@ -17,6 +21,14 @@ filtered_views(
 \item{wkt_filter}{A well-known text geometry of the area of interest.}
 
 \item{tables}{A character vector of tables to create views from.}
+
+\item{materialize}{Logical (default \code{TRUE}). When \code{TRUE} each filtered
+result is written to a temporary \strong{table} with an RTREE spatial index
+instead of a view. Materialization requires a one-time scan of each base
+table but every subsequent spatial join — VRI×BEM intersection, wetland
+area aggregation, fire polygon overlay, CCB union-split, etc. — can
+exploit the index rather than re-evaluating the AOI filter on each access.
+Set to \code{FALSE} to restore the original view-only behaviour.}
 }
 \description{
 Create the filtered views from the source table for the analysis

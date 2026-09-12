@@ -1,6 +1,49 @@
 source(file.path("..", "..", "R", "terra_rrm_pipeline.R"))
 source(file.path("..", "..", "R", "raterize_sf_gdal.R"))
 
+test_that("rasterize_sf_gdal_materialized reads GeoPackage field names rather than field counts", {
+  skip_if_not_installed("sf")
+  skip_if_not_installed("terra")
+
+  geom <- sf::st_sfc(
+    sf::st_polygon(list(matrix(c(0, 0, 1, 0, 1, 1, 0, 1, 0, 0), ncol = 2, byrow = TRUE))),
+    sf::st_polygon(list(matrix(c(1, 0, 2, 0, 2, 1, 1, 1, 1, 0), ncol = 2, byrow = TRUE))),
+    crs = 4326
+  )
+
+  source_sf <- sf::st_sf(
+    data.frame(
+      SPEC_PCT_1 = c(10L, 20L),
+      SPEC_PCT_2 = c(11L, 21L),
+      BCLCS_LV_1 = c("A", "B"),
+      stringsAsFactors = FALSE
+    ),
+    geometry = geom
+  )
+
+  source_file <- tempfile(fileext = ".gpkg")
+  output_file <- tempfile(fileext = ".tif")
+  sf::st_write(source_sf, source_file, layer = "VRIBEM", quiet = TRUE)
+
+  result <- rasterize_sf_gdal_materialized(
+    src_datasource = source_file,
+    dst_filename = output_file,
+    layer = "VRIBEM",
+    numeric_attributes = c("SPEC_PCT_1", "SPEC_PCT_2"),
+    character_attributes = "BCLCS_LV_1",
+    te = c(0, 0, 2, 1),
+    tr = c(1, 1),
+    output_raster = TRUE,
+    verbose = FALSE,
+    factor_conv_list = list(BCLCS_LV_1 = data.table::data.table(value = c("A", "B"), factor = c(1L, 2L)))
+  )
+
+  expect_identical(names(result), c("SPEC_PCT_1", "SPEC_PCT_2", "BCLCS_LV_1"))
+  expect_equal(as.vector(terra::values(result[[1]])), c(10, 20))
+  expect_equal(as.vector(terra::values(result[[2]])), c(11, 21))
+  expect_equal(as.vector(terra::values(result[[3]])), c(1, 2))
+})
+
 test_that("rasterize_sf_gdal_materialized rasterizes numeric, character, date, and burn fields", {
   skip_if_not_installed("sf")
   skip_if_not_installed("terra")

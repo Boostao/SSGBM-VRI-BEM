@@ -12,6 +12,7 @@ rasterize_vri_materialized(
   te = NULL,
   tr = NULL,
   reference = NULL,
+  aoi = NULL,
   numeric_attributes = c(paste0("SPEC_PCT_", 1:6), "CR_CLOSURE", "COV_PCT_1",
     "PROJ_AGE_1"),
   character_attributes = c(paste0("BCLCS_LV_", 1:5), paste0("SPEC_CD_", 1:6),

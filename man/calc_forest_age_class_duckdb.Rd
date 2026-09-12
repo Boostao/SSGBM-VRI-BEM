@@ -7,8 +7,7 @@
 calc_forest_age_class_duckdb(
   conn,
   vri_bem_tbl,
-  ccb_tbl = "CCB",
-  harvest_year_col = "HARVEST_START_YEAR_CALENDAR"
+  most_recent_harvest_year = as.integer(format(Sys.Date(), "\%Y"))
 )
 }
 \arguments{
@@ -16,11 +15,9 @@ calc_forest_age_class_duckdb(
 
 \item{vri_bem_tbl}{Character. Name of the VRI-BEM table to modify in-place.}
 
-\item{ccb_tbl}{Character. Name of the CCB table in DuckDB from which the
-most-recent harvest year is derived (default \code{"V_CCB"}).}
-
-\item{harvest_year_col}{Character. Name of the harvest-year column inside
-\code{ccb_tbl} (default \code{"HARVEST_YEAR"}).}
+\item{most_recent_harvest_year}{Integer. The most recent harvest year used to
+override \code{PROJ_AGE_1} from \code{MRSRD_Y} (default: current calendar
+year via \code{as.integer(format(Sys.Date(), "\%Y"))}).}
 }
 \value{
 Invisibly returns \code{vri_bem_tbl}.
@@ -31,8 +28,6 @@ Compute forest age class variables inside DuckDB (in-place)
 \details{
 The function modifies \code{vri_bem_tbl} \strong{in-place} by:
 \enumerate{
-\item Deriving \code{most_recent_harvest_year} as
-\code{MAX(harvest_year_col)} from \code{ccb_tbl}.
 \item Adding columns \code{VRI_AGE_CL_STS} and \code{VRI_AGE_CL_STD}
 (idempotent — no-op when they already exist).
 \item If \code{MRSRD_Y} is present in \code{vri_bem_tbl}, updating

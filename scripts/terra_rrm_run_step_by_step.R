@@ -151,6 +151,7 @@ unique_ecosystem_dt <- read_unique_ecosystem_dt(file.path("inst", "csv", "Skeena
 
 # Run terra pipeline --------------------------------------------------------
 
+# [03] Read aligned raster stack — write directly to disk
 message("\n[03] Read aligned raster stack")
 step_01_input_stack <- .terra_rrm_read_input_stack(
   vri_dsn = vri_dsn,
@@ -159,65 +160,97 @@ step_01_input_stack <- .terra_rrm_read_input_stack(
   wetlands_dsn = wetlands_dsn,
   lakes_dsn = lakes_dsn,
   ccb_dsn = ccb_dsn,
-  elevation_dsn = elevation_raster
+  elevation_dsn = elevation_raster,
+  filename = file.path(output_dir, "01_input_stack.tif"),
+  overwrite = TRUE
 )
-terra::writeRaster(step_01_input_stack, file.path(output_dir, "01_input_stack.tif"), overwrite = TRUE)
+
+# [03b] Derive per-cell terrain layers — writes only MEAN_SLOPE + ABOVE_ELEV_THOLD
+# (2 small layers); result is a zero-copy virtual stack pointing to both files.
+message("\n[03b] Compute per-cell terrain layers (MEAN_SLOPE, ABOVE_ELEV_THOLD)")
+step_01b_terrain <- terra_rrm_compute_terrain_layers(
+  x = step_01_input_stack,
+  elevation_threshold = 1400,   # adjust to match your study area threshold
+  filename = file.path(output_dir, "01b_terrain_layers.tif"),
+  overwrite = TRUE
+)
 
 message("\n[04] Correct BEM from VRI")
 step_02_vri <- terra_rrm_correct_bem_from_vri(
-  x = step_01_input_stack,
+  x = step_01b_terrain,
   clear_site_ma = TRUE,
   use_ifelse = TRUE,
-  beu_bec = beu_bec
+  beu_bec = beu_bec,
+  filename = file.path(output_dir, "02_vri_corrections.tif"),
+  overwrite = TRUE
 )
-terra::writeRaster(step_02_vri, file.path(output_dir, "02_vri_corrections.tif"), overwrite = TRUE)
 
 message("\n[05] Apply river adjacency")
-step_03_river <- .terra_rrm_apply_river_adjacency_stage(step_02_vri)
-terra::writeRaster(step_03_river, file.path(output_dir, "03_river_adjacency.tif"), overwrite = TRUE)
+step_03_river <- .terra_rrm_apply_river_adjacency_stage(
+  x = step_02_vri
+)
+# river adjacency only sets 1 value on 1 layer — chain into next write
 
 message("\n[06] Correct small lakes")
 step_04_small_lakes <- terra_rrm_correct_small_lakes(
   x = step_03_river,
-  lake_layer = "lakes"
+  lake_layer = "lakes",
+  filename = file.path(output_dir, "03_river_and_lakes.tif"),
+  overwrite = TRUE
 )
-terra::writeRaster(step_04_small_lakes, file.path(output_dir, "04_small_lakes.tif"), overwrite = TRUE)
 
 message("\n[07] Correct BEM from wetlands")
 step_05_wetlands <- terra_rrm_correct_bem_from_wetlands(
   x = step_04_small_lakes,
-  buc = buc
+  buc = buc,
+  filename = file.path(output_dir, "04_wetland_corrections.tif"),
+  overwrite = TRUE
 )
-terra::writeRaster(step_05_wetlands, file.path(output_dir, "05_wetland_corrections.tif"), overwrite = TRUE)
 
 message("\n[08] Apply riparian wetland corrections")
-step_06_riparian <- terra_rrm_correct_bem_from_wetlands_riparian_stage(step_05_wetlands)
-terra::writeRaster(step_06_riparian, file.path(output_dir, "06_riparian_wetlands.tif"), overwrite = TRUE)
+step_06_riparian <- terra_rrm_correct_bem_from_wetlands_riparian_stage(
+  x = step_05_wetlands,
+  filename = file.path(output_dir, "05_riparian_wetlands.tif"),
+  overwrite = TRUE
+)
 
 message("\n[09] Apply rules")
 step_07_rules <- terra_rrm_apply_rules(
   x = step_06_riparian,
-  rules_dt = file.path(data_folder, "Rules_for_scripting_improved_forested_BEUs_Skeena_07Mar2022.xlsx")
+  rules_dt = file.path(data_folder, "Rules_for_scripting_improved_forested_BEUs_Skeena_07Mar2022.xlsx"),
+  filename = file.path(output_dir, "06_rules.tif"),
+  overwrite = TRUE
 )
-terra::writeRaster(step_07_rules, file.path(output_dir, "07_rules.tif"), overwrite = TRUE)
+
+message("\n[09b] Build final ecosystem keys")
+step_07b_keys <- terra_rrm_add_ecosystem_keys(
+  x = step_07_rules,
+  filename = file.path(output_dir, "06b_ecosystem_keys.tif"),
+  overwrite = TRUE
+)
 
 message("\n[10] Calculate forest age")
 step_08_forest_age <- terra_rrm_calc_forest_age_class(
-  x = step_07_rules,
-  most_recent_harvest_year = as.integer(format(Sys.Date(), "%Y"))
+  x = step_07b_keys,
+  most_recent_harvest_year = as.integer(format(Sys.Date(), "%Y")),
+  filename = file.path(output_dir, "07_forest_age.tif"),
+  overwrite = TRUE
 )
-terra::writeRaster(step_08_forest_age, file.path(output_dir, "08_forest_age.tif"), overwrite = TRUE)
 
 message("\n[11] Merge unique ecosystem fields")
 step_09_unique_ecosystem <- terra_rrm_merge_unique_ecosystem_fields(
   x = step_08_forest_age,
-  unique_ecosystem_dt = unique_ecosystem_dt
+  unique_ecosystem_dt = unique_ecosystem_dt,
+  filename = file.path(output_dir, "08_unique_ecosystem.tif"),
+  overwrite = TRUE
 )
-terra::writeRaster(step_09_unique_ecosystem, file.path(output_dir, "09_unique_ecosystem.tif"), overwrite = TRUE)
 
 message("\n[12] Find crown area dominant values")
-step_10_crown <- terra_rrm_find_crown_area_dominant_values(step_09_unique_ecosystem)
-terra::writeRaster(step_10_crown, file.path(output_dir, "10_crown.tif"), overwrite = TRUE)
+step_10_crown <- terra_rrm_find_crown_area_dominant_values(
+  x = step_09_unique_ecosystem,
+  filename = file.path(output_dir, "09_crown.tif"),
+  overwrite = TRUE
+)
 
 
 # Export --------------------------------------------------------------------

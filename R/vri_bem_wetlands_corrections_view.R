@@ -1,4 +1,4 @@
-vri_bem_wetlands_corrections_view <- function(conn, vri_bem = "VRIBEM_CORRECTIONS", wetlands = "V_WETLANDS", beu_wetland_updates = "beu_wetland_updates", result_tbl = vri_bem) {
+vri_bem_wetlands_corrections_view <- function(conn, vri_bem = "VRIBEM_CORRECTIONS", wetlands = "V_WETLANDS", beu_wetland_updates = "beu_wetland_updates", result_tbl = vri_bem, skip_riparian = FALSE) {
   
   # validate inputs ----
   validate_views_column_names(conn = conn, 
@@ -358,56 +358,80 @@ vri_bem_wetlands_corrections_view <- function(conn, vri_bem = "VRIBEM_CORRECTION
               where_expr = "(BEUMC_S1 = BEUMC_S2) OR (BEUMC_S1 = BEUMC_S3) OR (BEUMC_S2 = BEUMC_S3)")
   
   
-  # Riparian Mapcode adjustments (line 681) -----
-  non_veg <- "('RI','WL','BB','UR','OW','LS','LL','RE','CL','GB','GL','GP','MI','RO','TA','TC','TR','UV','BG','CB','FE','MR','PB','RS','SH','SK','SW','WG','TF','YB','YS','AU','AV','ES','IM','ME','OV','RM','SC','SM','ST')"
+  if (!skip_riparian) {
+    # Riparian Mapcode adjustments (line 681) -----
+    non_veg <- "('RI','WL','BB','UR','OW','LS','LL','RE','CL','GB','GL','GP','MI','RO','TA','TC','TR','UV','BG','CB','FE','MR','PB','RS','SH','SK','SW','WG','TF','YB','YS','AU','AV','ES','IM','ME','OV','RM','SC','SM','ST')"
 
-  riparian_mapcode <- data.frame(bgc_zone = c("CDF", "BWBS", "SWB", "ESSF", "ICH", "CWH", "SBPS", "SBS"),
-                                    beumc_s1 = c("CR", "PR", "PR", "ER", "RR", "SR", "WR", "WR"))
-  
-  
-  DBI::dbWriteTable(conn, "riparian_mapcode", riparian_mapcode, overwrite = TRUE, temporary = TRUE)
-  add_col_to_tbl(conn, tbl_name = tbl_name, col = "riparian_adj_ind", type = "BOOLEAN DEFAULT FALSE")
+    riparian_mapcode <- data.frame(bgc_zone = c("CDF", "BWBS", "SWB", "ESSF", "ICH", "CWH", "SBPS", "SBS"),
+                                      beumc_s1 = c("CR", "PR", "PR", "ER", "RR", "SR", "WR", "WR"))
 
-  DBI::dbExecute(conn, paste0("
-     UPDATE ", tbl_name, " vri_bem
-     SET 
-       SDEC_1 = 10, 
-       SDEC_2 = 0, 
-       SDEC_3 = 0,  
-       BEUMC_S1 = IFNULL(rp.BEUMC_S1, vri_bem.BEUMC_S1),
-       riparian_adj_ind = TRUE
-     FROM riparian_mapcode rp
-     WHERE vri_bem.init_SITE_M3a = 'a' 
-       AND vri_bem.MEAN_SLOPE < 10 
-       AND vri_bem.BEUMC_S1 NOT IN ", non_veg, "
-       AND vri_bem.BGC_ZONE = rp.bgc_zone"))
-  
-  shift_eco_variables_in_view(conn = conn, view_name = tbl_name, 
-                              cond = "riparian_adj_ind = TRUE", 
-                              shift_pattern = list(c("2", NA), c("3", NA)))
-  
-  update_tbl(conn, tbl_name = tbl_name, where_expr = "riparian_adj_ind = TRUE",
-             set_expr = "Lbl_edit_wl = Lbl_edit_wl || '; Updated to 10 ' || BEUMC_S1 || ' because SITE_M3A = a, Slope < 10, and BGC_ZONE = ' || BGC_ZONE || '.'")
-  
-  update_tbl(conn, tbl_name = tbl_name,
-             set_expr = "SITE_M3A = 'a'", 
-             where_expr = "init_SITE_M3A = 'a'")
-  
-  update_tbl(conn = conn, tbl_name = tbl_name, where_expr = NULL,
-             set_expr = "
-             BEUMC_S2 = CASE WHEN SDEC_2 = 0 THEN NULL ELSE BEUMC_S2 END,
-             BEUMC_S3 = CASE WHEN SDEC_3 = 0 THEN NULL ELSE BEUMC_S3 END,
-             SDEC_1 = CASE WHEN BEUMC_S2 IS NULL THEN SDEC_1 + IFNULL(SDEC_2, 0)
-                           WHEN BEUMC_S3 IS NULL THEN SDEC_1 + IFNULL(SDEC_3, 0)
-                           WHEN BEUMC_S2 IS NULL AND BEUMC_S3 IS NULL THEN 10
-                           ELSE SDEC_1 END,
-             SDEC_2 = CASE WHEN BEUMC_S2 IS NULL THEN 0 ELSE SDEC_2 END,
-             SDEC_3 = CASE WHEN BEUMC_S3 IS NULL THEN 0 ELSE SDEC_3 END"
-            )
-  
-  # clean temp vars 
-  rm_cols_from_tbl(conn, tbl_name = tbl_name, 
-    cols = c("init_SITE_M3a", "wl_3_ind", "curr_beu_code", "new_beu_code", "curr_wl_zone", "new_wl_zone", "ind_0_to_1", "ind_0_to_3", "riparian_adj_ind")) 
+    DBI::dbWriteTable(conn, "riparian_mapcode", riparian_mapcode, overwrite = TRUE, temporary = TRUE)
+    add_col_to_tbl(conn, tbl_name = tbl_name, col = "riparian_adj_ind", type = "BOOLEAN DEFAULT FALSE")
+
+    DBI::dbExecute(conn, paste0("
+       UPDATE ", tbl_name, " vri_bem
+       SET 
+         SDEC_1 = 10, 
+         SDEC_2 = 0, 
+         SDEC_3 = 0,  
+         BEUMC_S1 = IFNULL(rp.BEUMC_S1, vri_bem.BEUMC_S1),
+         riparian_adj_ind = TRUE
+       FROM riparian_mapcode rp
+       WHERE vri_bem.init_SITE_M3a = 'a' 
+         AND vri_bem.MEAN_SLOPE < 10 
+         AND vri_bem.BEUMC_S1 NOT IN ", non_veg, "
+         AND vri_bem.BGC_ZONE = rp.bgc_zone"))
+
+    shift_eco_variables_in_view(conn = conn, view_name = tbl_name, 
+                                cond = "riparian_adj_ind = TRUE", 
+                                shift_pattern = list(c("2", NA), c("3", NA)))
+
+    update_tbl(conn, tbl_name = tbl_name, where_expr = "riparian_adj_ind = TRUE",
+               set_expr = "Lbl_edit_wl = Lbl_edit_wl || '; Updated to 10 ' || BEUMC_S1 || ' because SITE_M3A = a, Slope < 10, and BGC_ZONE = ' || BGC_ZONE || '.'")
+
+    update_tbl(conn, tbl_name = tbl_name,
+               set_expr = "SITE_M3A = 'a'", 
+               where_expr = "init_SITE_M3A = 'a'")
+
+    update_tbl(conn = conn, tbl_name = tbl_name, where_expr = NULL,
+               set_expr = "
+               BEUMC_S2 = CASE WHEN SDEC_2 = 0 THEN NULL ELSE BEUMC_S2 END,
+               BEUMC_S3 = CASE WHEN SDEC_3 = 0 THEN NULL ELSE BEUMC_S3 END,
+               SDEC_1 = CASE WHEN BEUMC_S2 IS NULL THEN SDEC_1 + IFNULL(SDEC_2, 0)
+                             WHEN BEUMC_S3 IS NULL THEN SDEC_1 + IFNULL(SDEC_3, 0)
+                             WHEN BEUMC_S2 IS NULL AND BEUMC_S3 IS NULL THEN 10
+                             ELSE SDEC_1 END,
+               SDEC_2 = CASE WHEN BEUMC_S2 IS NULL THEN 0 ELSE SDEC_2 END,
+               SDEC_3 = CASE WHEN BEUMC_S3 IS NULL THEN 0 ELSE SDEC_3 END"
+              )
+
+    # clean temp vars (including init_SITE_M3a — not needed downstream)
+    rm_cols_from_tbl(conn, tbl_name = tbl_name,
+      cols = c("init_SITE_M3a", "wl_3_ind", "curr_beu_code", "new_beu_code", "curr_wl_zone", "new_wl_zone", "ind_0_to_1", "ind_0_to_3", "riparian_adj_ind"))
+  } else {
+    # Riparian adjustment deferred to the raster phase (per-cell MEAN_SLOPE).
+    # Restore SITE_M3A from init_SITE_M3A so the terra stage can use it, but
+    # keep init_SITE_M3A in the table so rasterization can burn it as a layer.
+    update_tbl(conn, tbl_name = tbl_name,
+               set_expr = "SITE_M3A = 'a'",
+               where_expr = "init_SITE_M3A = 'a'")
+
+    update_tbl(conn = conn, tbl_name = tbl_name, where_expr = NULL,
+               set_expr = "
+               BEUMC_S2 = CASE WHEN SDEC_2 = 0 THEN NULL ELSE BEUMC_S2 END,
+               BEUMC_S3 = CASE WHEN SDEC_3 = 0 THEN NULL ELSE BEUMC_S3 END,
+               SDEC_1 = CASE WHEN BEUMC_S2 IS NULL THEN SDEC_1 + IFNULL(SDEC_2, 0)
+                             WHEN BEUMC_S3 IS NULL THEN SDEC_1 + IFNULL(SDEC_3, 0)
+                             WHEN BEUMC_S2 IS NULL AND BEUMC_S3 IS NULL THEN 10
+                             ELSE SDEC_1 END,
+               SDEC_2 = CASE WHEN BEUMC_S2 IS NULL THEN 0 ELSE SDEC_2 END,
+               SDEC_3 = CASE WHEN BEUMC_S3 IS NULL THEN 0 ELSE SDEC_3 END"
+              )
+
+    # clean temp vars except init_SITE_M3a (kept for rasterization)
+    rm_cols_from_tbl(conn, tbl_name = tbl_name,
+      cols = c("wl_3_ind", "curr_beu_code", "new_beu_code", "curr_wl_zone", "new_wl_zone", "ind_0_to_1", "ind_0_to_3"))
+  }
 
   DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s ON %s USING RTREE (Shape);", tolower(tbl_name), tbl_name))
 }

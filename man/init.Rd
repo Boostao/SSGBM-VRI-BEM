@@ -13,9 +13,9 @@
 \alias{init_fire}
 \alias{init_tsa}
 \alias{init_conn}
-\title{Initialize a database}
+\title{Initialize SSGBM-VRI-BEM database}
 \usage{
-init_db(dbdir = defdb(), ask = interactive(), bem_dsn = NULL, prem_dsn = NULL)
+init_db(dbdir = defdb(), ask = interactive(), bem_dsn = NULL, pem_dsn = NULL)
 
 init_vri(
   conn = init_conn(),
@@ -29,8 +29,8 @@ init_bem(
   conn = init_conn(),
   ask = interactive(),
   dsn = NULL,
-  layer = "BEM",
-  geom = "geom"
+  layer = sf::st_layers(dsn)$name[1],
+  geom = "shape"
 )
 
 init_wetlands(
@@ -97,7 +97,13 @@ init_tsa(
   tsa_dsn = NULL
 )
 
-init_conn(dbdir = defdb())
+init_conn(
+  dbdir = defdb(),
+  temp_dir = NULL,
+  threads = NULL,
+  memory_limit = NULL,
+  force_unlock = FALSE
+)
 }
 \arguments{
 \item{dbdir}{Location for database files. Should be a path to an existing
@@ -107,6 +113,8 @@ in RAM.}
 \item{ask}{Boolean, whether to ask before re-initializing existing tables.}
 
 \item{bem_dsn}{data source name for BEM data.}
+
+\item{pem_dsn}{data source name for PEM data.}
 
 \item{conn}{Connection to database.}
 
@@ -131,14 +139,35 @@ query argument.}
 A vector of TSA_NUMBER_DESCRIPTION values to filter.}
 
 \item{Skeena_boundary}{Boolean. Restrict tsa to Skeena region.}
+
+\item{temp_dir}{Optional character path for DuckDB's temp directory (used
+for spill-to-disk during large spatial queries).  Created automatically
+if it does not exist.  When \code{NULL} (default) the DuckDB default is used.}
+
+\item{threads}{Optional integer number of threads for DuckDB to use.
+Defaults to \code{parallel::detectCores()} when \code{NULL}.}
+
+\item{memory_limit}{Optional DuckDB memory limit string, e.g. \code{"8GB"}.
+When \code{NULL} (default) the DuckDB default (~80\\% of RAM) applies.  Set to
+~70\\% of available RAM for large AOIs to leave headroom for R and terra.}
+
+\item{force_unlock}{Logical. When \code{TRUE}, and DuckDB reports that the
+database file is locked by another process with a specific PID, terminate
+that process and retry opening the database once. This is intentionally
+forceful and should only be used when it is safe to kill the locking
+process. Default \code{FALSE}.}
 }
 \description{
-Initialize a database
-
-Initialize and load spatial dataset to database
+Functions to initialize and populate a DuckDB database with spatial layers
+(VRI, BEM, wetlands, rivers, lakes, etc.) for the SSGBM workflow.
 }
 \details{
-This needs to be run once to create the database and load the
-required spatial dataset into it. The database can be stored locally
-for faster processing.
+\code{init_db()} creates a new database and initializes all required tables.
+This needs to be run once to create the database and load the required
+spatial dataset into it. The database can be stored locally for faster
+processing.
+
+\code{init_conn()} creates a database connection with optional performance tuning.
+
+\code{init_vri()}, \code{init_bem()}, and other \verb{init_*()} functions populate individual tables.
 }

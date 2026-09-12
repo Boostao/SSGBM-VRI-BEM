@@ -12,6 +12,7 @@ rasterize_bem_materialized(
   te = NULL,
   tr = NULL,
   reference = NULL,
+  aoi = NULL,
   numeric_attributes = c("TEIS_ID", "Area_Ha", "AGE_CL_STS", "SDEC_1", "SDEC_2",
     "SDEC_3", "BGC_VRT"),
   character_attributes = c("BGC_ZONE", "BGC_SUBZON", "BGC_PHASE", "SLOPE_MOD", "ECO_SEC",

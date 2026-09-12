@@ -194,12 +194,21 @@
     return(matched_mask)
   }
 
+  raster_conv <- .terra_rrm_get_raster_conv()
+  lookup_source <- if (layer_name %in% names(raster_conv$bem)) raster_conv$bem else if (layer_name %in% names(raster_conv$vri)) raster_conv$vri else NULL
+  if (!is.null(lookup_source)) {
+    matched_codes <- .terra_rrm_layer_codes(x, layer_name, values, lookup_source, strict = FALSE)
+    if (any(!is.na(matched_codes))) {
+      return(.terra_rrm_match_codes(layer, matched_codes))
+    }
+  }
+
   numeric_mask <- .terra_rrm_compare_numeric_rule(layer, rule_value)
   if (!is.null(numeric_mask)) {
     return(numeric_mask)
   }
 
-  stop(sprintf("Unsupported rule value '%s' for non-categorical layer '%s'.", rule_value, layer_name), call. = FALSE)
+  .terra_rrm_match_codes(layer, numeric(0))
 }
 
 
@@ -357,7 +366,8 @@
 }
 
 
-.terra_rrm_apply_river_adjacency_stage <- function(x, rivers_layer = "rivers") {
+.terra_rrm_apply_river_adjacency_stage <- function(x, rivers_layer = "rivers",
+                                                    filename = NULL, overwrite = FALSE) {
   stopifnot(inherits(x, "SpatRaster"))
   if (!rivers_layer %in% names(x) || !"SITE_M3A" %in% names(x)) {
     return(x)
@@ -374,7 +384,14 @@
     terra::ifel(x[[rivers_layer]] == 1, 1, NA)
   )
 
-  .terra_rrm_apply_constant(x, "SITE_M3A", river_mask, site_a_code)
+  result <- .terra_rrm_apply_constant(x, "SITE_M3A", river_mask, site_a_code)
+
+  if (is.null(filename)) {
+    return(result)
+  }
+
+  terra::writeRaster(result, filename = filename, overwrite = overwrite)
+  terra::rast(filename)
 }
 
 
@@ -465,23 +482,33 @@ terra_rrm_apply_rules <- function(x,
   pct_layers <- grep("^SPEC_PCT_[0-9]+$", names(result), value = TRUE)
 
   for (rule_idx in seq_len(nrow(rules_dt))) {
+    row_values <- rules_dt[rule_idx, , drop = FALSE]
+
     mask <- .terra_rrm_non_missing_mask(result)
     for (layer_name in input_layers) {
-      mask <- .terra_rrm_rule_mask(mask, .terra_rrm_rule_value_mask(result, layer_name, rules_dt[[layer_name]][rule_idx]))
+      rule_value <- row_values[[layer_name]][[1]]
+      if (is.na(rule_value) || !nzchar(trimws(as.character(rule_value)))) {
+        next
+      }
+      mask <- .terra_rrm_rule_mask(mask, .terra_rrm_rule_value_mask(result, layer_name, rule_value))
     }
 
     if (length(tree_rule_cd_columns) > 0L) {
       for (tree_idx in seq_along(tree_rule_cd_columns)) {
         cd_name <- rule_names[[tree_rule_cd_columns[[tree_idx]]]]
         pct_name <- if (tree_idx <= length(tree_rule_pct_columns)) rule_names[[tree_rule_pct_columns[[tree_idx]]]] else NULL
-        pct_value <- if (is.null(pct_name)) NA else rules_dt[[pct_name]][rule_idx]
-        tree_mask <- .terra_rrm_tree_rule_mask(result, rules_dt[[cd_name]][rule_idx], pct_value, species_layers, pct_layers)
-        mask <- .terra_rrm_rule_mask(mask, tree_mask)
+        pct_value <- if (is.null(pct_name)) NA else row_values[[pct_name]][[1]]
+        tree_rule_value <- row_values[[cd_name]][[1]]
+        if (!is.na(tree_rule_value) && nzchar(trimws(as.character(tree_rule_value)))) {
+          tree_mask <- .terra_rrm_tree_rule_mask(result, tree_rule_value, pct_value, species_layers, pct_layers)
+          mask <- .terra_rrm_rule_mask(mask, tree_mask)
+        }
       }
     }
 
+    assigned_layers <- character(0L)
     for (layer_name in output_layers) {
-      output_value <- rules_dt[[layer_name]][rule_idx]
+      output_value <- row_values[[layer_name]][[1]]
       if (is.na(output_value) || !nzchar(trimws(as.character(output_value)))) {
         next
       }
@@ -489,6 +516,11 @@ terra_rrm_apply_rules <- function(x,
       target_layer <- if (identical(layer_name, "BEUMC")) "BEUMC_S1" else layer_name
       resolved_value <- .terra_rrm_resolve_output_value(result, target_layer, output_value)
       result <- .terra_rrm_apply_constant(result, target_layer, mask, resolved_value)
+      assigned_layers <- c(assigned_layers, target_layer)
+    }
+
+    if (length(assigned_layers) == 0L) {
+      next
     }
   }
 
@@ -1648,7 +1680,7 @@ terra_rrm_correct_bem_from_vri <- function(x,
       use_ifelse  = use_ifelse
     )
 
-    terra::writeValues(out, m, row = b$row[i], nrows = b$nrows[i])
+    terra::writeValues(out, m, start = b$row[i], nrows = b$nrows[i])
   }
   terra::writeStop(out)
 

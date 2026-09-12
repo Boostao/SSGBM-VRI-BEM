@@ -12,6 +12,7 @@ rasterize_ccb_materialized(
   te = NULL,
   tr = NULL,
   reference = NULL,
+  aoi = NULL,
   numeric_attributes = "HARVESTYR",
   character_attributes = NULL,
   date_attributes = NULL,

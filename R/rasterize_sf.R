@@ -13,10 +13,11 @@
 #' @param burn character, create a layer with the name of the "burn" argument which burn the value 1 where polygons intersect with the extent of the raster
 #' @param output_raster boolean, if TRUE, the resulting raster will be returned
 #' @param verbose boolean, if TRUE progression message will be printed
-#' @inheritParams gdalUtils::gdal_rasterize
+#' @param a_srs character, assign output SRS (WKT definition)
+#' @param te numeric vector, target extent: (xmin ymin xmax ymax)
+#' @param tr numeric vector, target resolution: (xres yres)
 #' @return SpatRaster if output_raster is TRUE, NULL otherwise
 #' @importFrom terra `add<-` crs ext rast writeRaster res
-#' @importFrom gdalUtils gdal_rasterize
 #' @importFrom sf st_layers
 #' @export
 rasterize_sf <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NULL, te = NULL, tr = NULL, reference = NULL,

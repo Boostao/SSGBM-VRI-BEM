@@ -1,4 +1,8 @@
-#' Initialize a database
+#' Initialize SSGBM-VRI-BEM database
+#'
+#' Functions to initialize and populate a DuckDB database with spatial layers
+#' (VRI, BEM, wetlands, rivers, lakes, etc.) for the SSGBM workflow.
+#'
 #' @rdname init
 #' @param dbdir Location for database files. Should be a path to an existing
 #'   directory in the file system. With the default (or ""), all data is kept
@@ -6,24 +10,17 @@
 #' @param ask Boolean, whether to ask before re-initializing existing tables.
 #' @param bem_dsn data source name for BEM data.
 #' @param pem_dsn data source name for PEM data.
-#' @param temp_dir Optional character path for DuckDB's temp directory (used
-#'   for spill-to-disk during large spatial queries).  Created automatically
-#'   if it does not exist.  When `NULL` (default) the DuckDB default is used.
-#' @param threads Optional integer number of threads for DuckDB to use.
-#'   Defaults to `parallel::detectCores()` when `NULL`.
-#' @param memory_limit Optional DuckDB memory limit string, e.g. `"8GB"`.
-#'   When `NULL` (default) the DuckDB default (~80\% of RAM) applies.  Set to
-#'   ~70\% of available RAM for large AOIs to leave headroom for R and terra.
-#' @param force_unlock Logical. When `TRUE`, and DuckDB reports that the
-#'   database file is locked by another process with a specific PID, terminate
-#'   that process and retry opening the database once. This is intentionally
-#'   forceful and should only be used when it is safe to kill the locking
-#'   process. Default `FALSE`.
 #' @export
 #' @import duckdb
-#' @details This needs to be run once to create the database and load the
-#'   required spatial dataset into it. The database can be stored locally
-#'   for faster processing.
+#' @details
+#' `init_db()` creates a new database and initializes all required tables.
+#' This needs to be run once to create the database and load the required
+#' spatial dataset into it. The database can be stored locally for faster
+#' processing.
+#'
+#' `init_conn()` creates a database connection with optional performance tuning.
+#'
+#' `init_vri()`, `init_bem()`, and other `init_*()` functions populate individual tables.
 init_db <- function(dbdir = defdb(),
                     ask = interactive(),
                     bem_dsn = NULL,
@@ -48,10 +45,8 @@ init_db <- function(dbdir = defdb(),
   duckdb::dbDisconnect(conn, shutdown = TRUE)
 }
 
-#' Initialize and load spatial dataset to database
-#'
+#' @rdname init
 #' @param conn Connection to database.
-#' @param ask Boolean, whether to ask before re-initializing existing tables.
 #' @param dsn data source name (interpretation varies by driver - for some
 #'   drivers, dsn is a file name, but may also be a folder, or contain the name
 #'   and access credentials of a database); in case of GeoJSON, dsn may be the
@@ -68,7 +63,6 @@ init_db <- function(dbdir = defdb(),
 #' @param geom geometry field name to use. Default to `Shape`.
 #' @importFrom bcdata bcdc_tidy_resources
 #' @export
-#' @rdname init
 init_vri <- function(conn = init_conn(),
                      ask = interactive(),
                      dsn = NULL,
@@ -604,8 +598,21 @@ init_tsa <- function(conn = init_conn(),
   is.numeric(status) && identical(as.integer(status), 0L)
 }
 
-#' @export
 #' @rdname init
+#' @param temp_dir Optional character path for DuckDB's temp directory (used
+#'   for spill-to-disk during large spatial queries).  Created automatically
+#'   if it does not exist.  When `NULL` (default) the DuckDB default is used.
+#' @param threads Optional integer number of threads for DuckDB to use.
+#'   Defaults to `parallel::detectCores()` when `NULL`.
+#' @param memory_limit Optional DuckDB memory limit string, e.g. `"8GB"`.
+#'   When `NULL` (default) the DuckDB default (~80\% of RAM) applies.  Set to
+#'   ~70\% of available RAM for large AOIs to leave headroom for R and terra.
+#' @param force_unlock Logical. When `TRUE`, and DuckDB reports that the
+#'   database file is locked by another process with a specific PID, terminate
+#'   that process and retry opening the database once. This is intentionally
+#'   forceful and should only be used when it is safe to kill the locking
+#'   process. Default `FALSE`.
+#' @export
 init_conn <- function(dbdir = defdb(), temp_dir = NULL, threads = NULL, memory_limit = NULL,
                       force_unlock = FALSE) {
   cfg <- list(storage_compatibility_version = "v1.5.0")

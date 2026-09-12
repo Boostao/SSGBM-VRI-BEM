@@ -67,6 +67,7 @@ terra_rrm_prepare_ecosystem_stack <- function(x,
   result <- terra_rrm_correct_bem_from_wetlands(result, buc = buc)
   result <- terra_rrm_correct_bem_from_wetlands_riparian_stage(result)
   result <- terra_rrm_apply_rules(result, rules_dt = rules_dt)
+  result <- terra_rrm_add_ecosystem_keys(result)
   result <- terra_rrm_calc_forest_age_class(result, most_recent_harvest_year = most_recent_harvest_year)
   result <- terra_rrm_merge_unique_ecosystem_fields(result, unique_ecosystem_dt = unique_ecosystem_dt)
   result <- terra_rrm_find_crown_area_dominant_values(result)

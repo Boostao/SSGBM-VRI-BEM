@@ -10,7 +10,7 @@ merge_elevation_duckdb(
   elev_raster,
   elevation_threshold = 1500,
   terrain_raster = NULL,
-  result_tbl = "VRIBEM_ELEVATION"
+  result_tbl = vri_bem_tbl
 )
 }
 \arguments{
@@ -31,7 +31,7 @@ raster is derived from \code{elev_raster} via \code{\link[terra:terrain]{terra::
 
 \item{result_tbl}{Character. Name given to the (temp) table written to
 \code{conn} that will hold the final result including the new columns.
-Defaults to \code{"VRIBEM_ELEVATION"}.}
+Defaults to \code{vri_bem_tbl}.}
 }
 \value{
 The name of the result table (\code{result_tbl}) invisibly.  The caller
@@ -40,17 +40,19 @@ can query \code{conn} directly, e.g. \code{duckdb::dbReadTable(conn, result_tbl)
 \description{
 This is the DuckDB-optimised counterpart of \code{\link[=merge_elevation_raster_on_sf]{merge_elevation_raster_on_sf()}}.
 Raster cells are exported to temporary \strong{Parquet files on disk} via
-\code{\link[arrow:write_parquet]{arrow::write_parquet()}}.  DuckDB then reads those files natively with
+\code{\link[arrow:write_parquet]{arrow::write_parquet()}}. DuckDB then reads those files natively with
 \code{read_parquet()} and performs the spatial join (\code{ST_Contains(polygon, ST_Point(x, y))}), aggregation, and \code{SLOPE_MOD} / \code{ABOVE_ELEV_THOLD}
 derivation entirely in SQL — R never holds the raster as an in-memory vector
 object.
 }
 \details{
-\strong{Memory model}: each raster layer is converted to a flat \verb{(x, y, value)}
-data frame via \code{\link[terra:as.data.frame]{terra::as.data.frame()}} and written to a temp Parquet file.
-DuckDB streams those files directly from disk via \code{read_parquet()}, so the
-peak R memory is one data frame at a time rather than three full
-\code{SpatVector} polygon objects.
+\strong{Memory model}: raster values are read block-by-block from terra and
+written as Parquet parts on disk. DuckDB streams those files directly
+from disk via \code{read_parquet()}, so peak R memory is bounded to one raster
+block plus one polygon batch rather than the full cropped raster or three
+full \code{SpatVector} polygon objects. Polygon-to-cell ID assignment is
+rasterized in batches to avoid materializing all source polygons in memory
+at once.
 
 \strong{SLOPE_MOD} derivation rules (identical to \code{\link[=merge_elevation_raster_on_sf]{merge_elevation_raster_on_sf()}}):
 \itemize{

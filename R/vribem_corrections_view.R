@@ -1,4 +1,16 @@
-vribem_corrections_view <- function(conn, vri_bem_tbl = "V_VRIBEM", beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE, result_tbl = vri_bem_tbl){
+#' Apply VRI/BEM corrections view
+#'
+#' @param conn A DuckDB connection.
+#' @param vri_bem_tbl Name of the source table (default \code{"V_VRIBEM"}).
+#' @param beu_bec Name of the allowed BEC/BEU combinations table.
+#' @param clear_site_ma Logical; if TRUE, clears SITE_M1A and SITE_M2A (default TRUE).
+#' @param use_ifelse Logical; reserved for future use (default TRUE).
+#' @param result_tbl Name of the result table (default same as \code{vri_bem_tbl}).
+#' @param skip_river_adjacency Logical; if TRUE, skips the INTERSECTS_RIVER update so
+#'   that river adjacency can be applied per-cell in the raster phase (default FALSE).
+#' @return Invisibly returns \code{result_tbl}.
+#' @export
+vribem_corrections_view <- function(conn, vri_bem_tbl = "V_VRIBEM", beu_bec, clear_site_ma = TRUE, use_ifelse = TRUE, result_tbl = vri_bem_tbl, skip_river_adjacency = FALSE){
   
   # validate inputs ----
   validate_views_column_names(conn = conn, 
@@ -266,11 +278,13 @@ vribem_corrections_view <- function(conn, vri_bem_tbl = "V_VRIBEM", beu_bec, cle
   # for all feature that intersect with rivers
   # SITE_M3A becomes "a"
   # and lbl is updated to say the old value became "a"
-  DBI::dbExecute(conn, paste0("
-    UPDATE ", result_tbl, "
-      SET SITE_M3A = 'a', 
-       lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || 'Updated SITE_M3A from ' || SITE_M3A || ' to a because unit intersects with river feature' ELSE 'Updated SITE_M3A from ' || SITE_M3A || ' to a because unit intersects with river feature' END
-      WHERE INTERSECTS_RIVER;"))
+  if (!skip_river_adjacency) {
+    DBI::dbExecute(conn, paste0("
+      UPDATE ", result_tbl, "
+        SET SITE_M3A = 'a', 
+         lbl_edit = CASE WHEN lbl_edit != '' THEN lbl_edit || '; ' || 'Updated SITE_M3A from ' || SITE_M3A || ' to a because unit intersects with river feature' ELSE 'Updated SITE_M3A from ' || SITE_M3A || ' to a because unit intersects with river feature' END
+        WHERE INTERSECTS_RIVER;"))
+  }
 
   # remove temp variables 
   rm_cols_from_tbl(conn, tbl_name = result_tbl, c("row_updated", "blank_eco_variables"))
