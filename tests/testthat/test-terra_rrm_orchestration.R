@@ -18,9 +18,21 @@ raster_conv <- .terra_rrm_get_raster_conv()
 test_that("terra_rrm_prepare_ecosystem_stack runs stages in the expected order", {
   skip_if_not_installed("terra")
 
-  raster <- terra::rast(nrows = 1, ncols = 1, xmin = 0, xmax = 100, ymin = 0, ymax = 100)
-  terra::values(raster) <- 1
-  names(raster) <- "lakes"
+  make_raster <- function(name, value) {
+    raster <- terra::rast(nrows = 1, ncols = 1, xmin = 0, xmax = 100, ymin = 0, ymax = 100)
+    terra::values(raster) <- value
+    names(raster) <- name
+    raster
+  }
+
+  raster <- c(
+    make_raster("lakes", 1),
+    make_raster("ELEV", 1500),
+    make_raster("MEAN_SLOPE", 30),
+    make_raster("MEAN_ASP", 90),
+    make_raster("ABOVE_ELEV_THOLD", 2),
+    make_raster("SLOPE_MOD", 2)
+  )
 
   stub_state <- new.env(parent = emptyenv())
   stub_state$calls <- character()
@@ -185,6 +197,7 @@ test_that("terra_rrm_create_RRM_ecosystem_from_rasters reads disk rasters and fo
                                                      rules_dt,
                                                      unique_ecosystem_dt,
                                                      most_recent_harvest_year,
+                                                     elevation_threshold,
                                                      kind,
                                                      lake_layer,
                                                      apply_small_lakes,
@@ -200,6 +213,7 @@ test_that("terra_rrm_create_RRM_ecosystem_from_rasters reads disk rasters and fo
       rules_dt = rules_dt,
       unique_ecosystem_dt = unique_ecosystem_dt,
       most_recent_harvest_year = most_recent_harvest_year,
+      elevation_threshold = elevation_threshold,
       kind = kind,
       lake_layer = lake_layer,
       apply_small_lakes = apply_small_lakes,
@@ -221,6 +235,7 @@ test_that("terra_rrm_create_RRM_ecosystem_from_rasters reads disk rasters and fo
     ccb_dsn = ccb_dsn,
     rules_xl = "rules.xlsx",
     most_recent_harvest_year = 2024,
+    elevation_threshold = 1500,
     kind = "moose",
     beu_bec_csv = beu_bec_csv,
     beu_wetland_update_csv = wetland_csv,
@@ -241,6 +256,7 @@ test_that("terra_rrm_create_RRM_ecosystem_from_rasters reads disk rasters and fo
   expect_true(is.data.frame(stub_state$args$unique_ecosystem_dt))
   expect_equal(stub_state$args$rules_dt, "rules.xlsx")
   expect_equal(stub_state$args$most_recent_harvest_year, 2024)
+  expect_equal(stub_state$args$elevation_threshold, 1500)
   expect_equal(stub_state$args$kind, "moose")
   expect_equal(stub_state$args$lake_layer, "lakes")
   expect_true(stub_state$args$apply_small_lakes)

@@ -17,6 +17,11 @@ suppressPackageStartupMessages({
 elevation_raster <- file.path("..", "SSGBM-VRI-BEM-data", "dem.tif")
 data_folder <- file.path("..", "SSGBM-VRI-BEM-data")
 
+# Raster-stage adjacency buffers, expressed in raster cells.
+# Set to 0L to keep the exact feature footprint only.
+river_buffer_cells <- 2L
+lake_buffer_cells  <- 2L
+
 
 # Fixed paths ---------------------------------------------------------------
 
@@ -30,6 +35,9 @@ dir.create(raster_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 elevation_raster <- normalizePath(elevation_raster, winslash = "/", mustWork = TRUE)
+reference_resolution_m <- max(terra::res(terra::rast(elevation_raster)))
+river_buffer_m <- river_buffer_cells * reference_resolution_m
+lake_buffer_m  <- lake_buffer_cells * reference_resolution_m
 
 stopifnot(file.exists(file.path(data_folder, "Rules_for_scripting_improved_forested_BEUs_Skeena_07Mar2022.xlsx")))
 
@@ -187,7 +195,8 @@ step_02_vri <- terra_rrm_correct_bem_from_vri(
 
 message("\n[05] Apply river adjacency")
 step_03_river <- .terra_rrm_apply_river_adjacency_stage(
-  x = step_02_vri
+  x = step_02_vri,
+  buffer_m = river_buffer_m
 )
 # river adjacency only sets 1 value on 1 layer — chain into next write
 
@@ -195,6 +204,7 @@ message("\n[06] Correct small lakes")
 step_04_small_lakes <- terra_rrm_correct_small_lakes(
   x = step_03_river,
   lake_layer = "lakes",
+  buffer_m = lake_buffer_m,
   filename = file.path(output_dir, "03_river_and_lakes.tif"),
   overwrite = TRUE
 )

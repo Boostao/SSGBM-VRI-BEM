@@ -74,6 +74,11 @@ duckdb_threads      <- 1L
 # Elevation threshold for ABOVE_ELEV_THOLD (metres)
 elevation_threshold <- 1400L
 
+# Raster-stage adjacency buffers, expressed in raster cells.
+# Set to 0L to keep the exact feature footprint only.
+river_buffer_cells <- 2L
+lake_buffer_cells  <- 2L
+
 # AOI as WKT (Albers BC / EPSG:3005).  Replace with your study area.
 aoi_wkt_full <- "MULTIPOLYGON (((1065018 932215.1, 941827.7 932215.1, 941827.7 1016988, 1065018 1016988, 1065018 932215.1)))"
 # Small AOI for quick end-to-end testing (~2 km x 2 km).
@@ -101,6 +106,9 @@ dir.create(output_dir,      recursive = TRUE, showWarnings = FALSE)
 dir.create(duckdb_temp_dir, recursive = TRUE, showWarnings = FALSE)
 
 elevation_raster <- normalizePath(elevation_raster, winslash = "/", mustWork = TRUE)
+reference_resolution_m <- max(terra::res(terra::rast(elevation_raster)))
+river_buffer_m <- river_buffer_cells * reference_resolution_m
+lake_buffer_m  <- lake_buffer_cells * reference_resolution_m
 
 stopifnot(file.exists(rules_xl))
 
@@ -200,8 +208,9 @@ vribem_corrections_view(
   beu_bec              = "beu_bec_corr",
   result_tbl           = "VRIBEM",
   skip_river_adjacency = TRUE
-  # River adjacency deferred to terra T05 — SITE_M3A = "a" set only for pixels
-  # physically covered by river pixels, not for the whole intersecting polygon.
+  # River adjacency deferred to terra T05 — SITE_M3A = "a" is applied from the
+  # rivers raster plus a configurable raster-space buffer, not to the whole
+  # intersecting polygon.
 )
 
 
@@ -382,7 +391,7 @@ step_stack <- .terra_rrm_read_input_stack_from_vribem(
 )
 
 
-# T03b — Per-cell terrain layers (MEAN_SLOPE, ABOVE_ELEV_THOLD) -----------
+# T03b — Per-cell terrain layers (ELEV, MEAN_SLOPE, MEAN_ASP, ABOVE_ELEV_THOLD, SLOPE_MOD) -----------
 
 message("\n[T03b] Compute per-cell terrain layers")
 
@@ -395,17 +404,26 @@ step_stack <- terra_rrm_compute_terrain_layers(
 # Returns a zero-copy virtual multi-source SpatRaster:
 #   c(T03_input_stack.tif,  T03b_terrain_layers.tif)
 
+slope_mod_values <- .terra_rrm_decode_layer_values(step_stack, "SLOPE_MOD")
+slope_mod_tab <- sort(table(slope_mod_values, useNA = "ifany"), decreasing = TRUE)
+message("[T03b] SLOPE_MOD distribution: ", paste(names(slope_mod_tab), as.integer(slope_mod_tab), sep = "=", collapse = ", "))
+
+if (all(is.na(slope_mod_values))) {
+  warning("[T03b] All SLOPE_MOD values are NA. Check DEM quality/resolution alignment and BEUMC/BGC category decoding before proceeding.")
+}
+
 
 # T05 — Per-cell river adjacency (SITE_M3A = "a") -------------------------
 # Skipped in DuckDB phase: INTERSECTS_RIVER flags the whole polygon if any
 # part touches a river, so a large polygon spanning non-riparian terrain would
-# incorrectly get SITE_M3A = "a" everywhere.  The raster stage sets it only
-# for pixels physically covered by river pixels.
+# incorrectly get SITE_M3A = "a" everywhere.  The raster stage now applies it
+# within a configurable buffer around river pixels.
 
 message("\n[T05] Apply river adjacency (per-cell)")
 
 step_rivers <- .terra_rrm_apply_river_adjacency_stage(
-  x = step_stack
+  x = step_stack,
+  buffer_m = river_buffer_m
   # No filename: 1 ifel operation, chains lazily into T06 which writes.
 )
 
@@ -413,14 +431,16 @@ step_rivers <- .terra_rrm_apply_river_adjacency_stage(
 # T06 — Per-cell lake corrections ------------------------------------------
 # Skipped in DuckDB phase: correct_small_lakes_duckdb cuts polygons at vector
 # level, which reintroduces the large-polygon attribution problem.  Doing it
-# here on the lakes raster means every pixel is evaluated independently.
+# here on the lakes raster means every pixel is evaluated independently, with a
+# configurable shoreline buffer to avoid an overly sharp lake edge.
 
 message("\n[T06] Correct small lakes (per-cell)")
 
 step_lakes <- terra_rrm_correct_small_lakes(
-  x         = step_rivers,
+  x          = step_rivers,
   lake_layer = "lakes",
-  filename  = file.path(output_dir, "T06_lakes.tif"),
+  buffer_m   = lake_buffer_m,
+  filename   = file.path(output_dir, "T06_lakes.tif"),
   overwrite = TRUE
 )
 

@@ -8,7 +8,7 @@
 #'
 #' The input stack must already contain the precomputed raster layers required
 #' by the stage functions it invokes, such as `wl_pct`, `MEAN_SLOPE`,
-#' `PROJ_AGE_1`, and `ABOVE_ELEV_THOLD` when those stages depend on them.
+#' `PROJ_AGE_1`, and terrain-derived layers when those stages depend on them.
 #'
 #' @param x A `terra::SpatRaster` containing the aligned raster-only inputs.
 #' @param buc A data frame containing the wetland lookup columns expected by
@@ -21,7 +21,15 @@
 #'   lookup values expected by [terra_rrm_merge_unique_ecosystem_fields()].
 #' @param most_recent_harvest_year Numeric scalar passed to
 #'   [terra_rrm_calc_forest_age_class()].
+#' @param elevation_threshold Optional numeric scalar. When provided and
+#'   `elevation` exists in `x`, terrain layers (`ELEV`, `MEAN_SLOPE`,
+#'   `MEAN_ASP`, `ABOVE_ELEV_THOLD`, `SLOPE_MOD`) are derived at raster-cell
+#'   resolution before correction stages.
+#' @param river_buffer_m Optional non-negative buffer distance in raster map
+#'   units applied around river pixels before `SITE_M3A = "a"` is assigned.
 #' @param lake_layer Name of the aligned lake-presence layer.
+#' @param lake_buffer_m Optional non-negative buffer distance in raster map
+#'   units applied around lake pixels before small-lake corrections are run.
 #' @param apply_small_lakes Logical. If `TRUE`, run
 #'   [terra_rrm_correct_small_lakes()].
 #' @param clear_site_ma Logical passed to
@@ -38,7 +46,10 @@ terra_rrm_prepare_ecosystem_stack <- function(x,
                                               rules_dt,
                                               unique_ecosystem_dt,
                                               most_recent_harvest_year,
+                                              elevation_threshold = NULL,
+                                              river_buffer_m = 0,
                                               lake_layer = "lakes",
+                                              lake_buffer_m = 0,
                                               apply_small_lakes = lake_layer %in% names(x),
                                               clear_site_ma = TRUE,
                                               use_ifelse = TRUE,
@@ -49,19 +60,42 @@ terra_rrm_prepare_ecosystem_stack <- function(x,
   stopifnot(is.data.frame(unique_ecosystem_dt))
   stopifnot(length(most_recent_harvest_year) == 1L, !is.na(most_recent_harvest_year))
 
+  result <- x
+  if ("elevation" %in% names(result)) {
+    if (is.null(elevation_threshold) || !is.numeric(elevation_threshold) || length(elevation_threshold) != 1L || is.na(elevation_threshold)) {
+      stop("elevation_threshold must be a single non-missing numeric value when an 'elevation' layer is present.", call. = FALSE)
+    }
+    result <- terra_rrm_compute_terrain_layers(
+      x = result,
+      elevation_threshold = elevation_threshold
+    )
+  }
+
+  required_terrain_layers <- c("ELEV", "MEAN_SLOPE", "MEAN_ASP", "ABOVE_ELEV_THOLD", "SLOPE_MOD")
+  missing_terrain_layers <- setdiff(required_terrain_layers, names(result))
+  if (length(missing_terrain_layers) > 0L) {
+    stop(
+      sprintf(
+        "Missing required terrain layers for terra_rrm_prepare_ecosystem_stack: %s",
+        paste(missing_terrain_layers, collapse = ", ")
+      ),
+      call. = FALSE
+    )
+  }
+
   result <- terra_rrm_correct_bem_from_vri(
-    x,
+    result,
     clear_site_ma = clear_site_ma,
     use_ifelse = use_ifelse,
     beu_bec = beu_bec
   )
-  result <- .terra_rrm_apply_river_adjacency_stage(result)
+  result <- .terra_rrm_apply_river_adjacency_stage(result, buffer_m = river_buffer_m)
 
   if (isTRUE(apply_small_lakes)) {
     if (!lake_layer %in% names(result)) {
       stop(sprintf("Lake layer '%s' is required when apply_small_lakes is TRUE.", lake_layer), call. = FALSE)
     }
-    result <- terra_rrm_correct_small_lakes(result, lake_layer = lake_layer)
+    result <- terra_rrm_correct_small_lakes(result, lake_layer = lake_layer, buffer_m = lake_buffer_m)
   }
 
   result <- terra_rrm_correct_bem_from_wetlands(result, buc = buc)
@@ -97,9 +131,15 @@ terra_rrm_prepare_ecosystem_stack <- function(x,
 #'   lookup values expected by [terra_rrm_merge_unique_ecosystem_fields()].
 #' @param most_recent_harvest_year Numeric scalar passed to
 #'   [terra_rrm_calc_forest_age_class()].
+#' @param elevation_threshold Optional numeric scalar forwarded to
+#'   [terra_rrm_prepare_ecosystem_stack()] for terrain-layer derivation.
 #' @param kind Character vector containing one or both of `"moose"` and
 #'   `"bear"`.
+#' @param river_buffer_m Optional non-negative buffer distance in raster map
+#'   units forwarded to [terra_rrm_prepare_ecosystem_stack()].
 #' @param lake_layer Name of the aligned lake-presence layer.
+#' @param lake_buffer_m Optional non-negative buffer distance in raster map
+#'   units forwarded to [terra_rrm_prepare_ecosystem_stack()].
 #' @param apply_small_lakes Logical. If `TRUE`, run
 #'   [terra_rrm_correct_small_lakes()].
 #' @param clear_site_ma Logical passed to
@@ -121,8 +161,11 @@ terra_rrm_create_RRM_ecosystem <- function(x,
                                            rules_dt,
                                            unique_ecosystem_dt,
                                            most_recent_harvest_year,
+                                           elevation_threshold = NULL,
                                            kind = c("moose", "bear"),
+                                           river_buffer_m = 0,
                                            lake_layer = "lakes",
+                                           lake_buffer_m = 0,
                                            apply_small_lakes = lake_layer %in% names(x),
                                            clear_site_ma = TRUE,
                                            use_ifelse = TRUE,
@@ -139,7 +182,10 @@ terra_rrm_create_RRM_ecosystem <- function(x,
     rules_dt = rules_dt,
     unique_ecosystem_dt = unique_ecosystem_dt,
     most_recent_harvest_year = most_recent_harvest_year,
+    elevation_threshold = elevation_threshold,
+    river_buffer_m = river_buffer_m,
     lake_layer = lake_layer,
+    lake_buffer_m = lake_buffer_m,
     apply_small_lakes = apply_small_lakes,
     clear_site_ma = clear_site_ma,
     use_ifelse = use_ifelse,
@@ -187,6 +233,8 @@ terra_rrm_create_RRM_ecosystem <- function(x,
 #'   [terra_rrm_calc_forest_age_class()].
 #' @param kind Character vector containing one or both of `"moose"` and
 #'   `"bear"`.
+#' @param elevation_threshold Numeric scalar used to derive
+#'   `ABOVE_ELEV_THOLD` and `SLOPE_MOD` when `elevation_dsn` is provided.
 #' @param lakes_dsn Optional path to an aligned lake raster.
 #' @param ccb_dsn Optional path to an aligned consolidated cutblock raster.
 #' @param elevation_dsn Optional path to an aligned elevation raster.
@@ -218,6 +266,7 @@ terra_rrm_create_RRM_ecosystem_from_rasters <- function(vri_dsn,
                                                         wetlands_dsn,
                                                         rules_xl,
                                                         most_recent_harvest_year,
+                                                        elevation_threshold = NULL,
                                                         kind = c("moose", "bear"),
                                                         lakes_dsn = NULL,
                                                         ccb_dsn = NULL,
@@ -266,6 +315,7 @@ terra_rrm_create_RRM_ecosystem_from_rasters <- function(vri_dsn,
     rules_dt = rules_xl,
     unique_ecosystem_dt = unique_ecosystem_dt,
     most_recent_harvest_year = most_recent_harvest_year,
+    elevation_threshold = elevation_threshold,
     kind = kind,
     lake_layer = lake_layer,
     apply_small_lakes = apply_small_lakes,

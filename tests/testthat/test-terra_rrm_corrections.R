@@ -101,6 +101,50 @@ test_that("terra_rrm_correct_small_lakes classifies rasterized lake patches", {
   expect_true(all(is.na(as.vector(terra::values(result[["SPEC_PCT_1"]]))[lake_values == 1])))
 })
 
+test_that("terra_rrm_correct_small_lakes can expand corrections around lake pixels", {
+  skip_if_not_installed("terra")
+
+  make_raster <- function(name, values) {
+    raster <- terra::rast(nrows = 1, ncols = length(values), xmin = 0, xmax = length(values) * 1000, ymin = 0, ymax = 100, crs = "EPSG:3005")
+    terra::values(raster) <- values
+    names(raster) <- name
+    raster
+  }
+
+  lake_values <- c(0L, 1L, 0L)
+
+  stack <- c(
+    make_raster("lakes", lake_values),
+    make_raster("BEUMC_S1", rep(1L, length(lake_values))),
+    make_raster("BEUMC_S2", rep(9L, length(lake_values))),
+    make_raster("BEUMC_S3", rep(8L, length(lake_values))),
+    make_raster("SDEC_1", rep(4L, length(lake_values))),
+    make_raster("SDEC_2", rep(3L, length(lake_values))),
+    make_raster("SDEC_3", rep(3L, length(lake_values))),
+    make_raster("BCLCS_LV_1", rep(9L, length(lake_values))),
+    make_raster("BCLCS_LV_2", rep(9L, length(lake_values))),
+    make_raster("BCLCS_LV_3", rep(9L, length(lake_values))),
+    make_raster("BCLCS_LV_4", rep(9L, length(lake_values))),
+    make_raster("BCLCS_LV_5", rep(9L, length(lake_values))),
+    make_raster("SPEC_CD_1", rep(5L, length(lake_values))),
+    make_raster("SPEC_PCT_1", rep(80L, length(lake_values)))
+  )
+
+  levels(stack[["BEUMC_S1"]]) <- data.frame(value = c(1L, 2L, 3L, 4L), label = c("XX", "OW", "LS", "LL"))
+  levels(stack[["BEUMC_S2"]]) <- data.frame(value = c(1L, 8L, 9L), label = c("XX", "YY", "ZZ"))
+  levels(stack[["BEUMC_S3"]]) <- data.frame(value = c(1L, 8L, 9L), label = c("XX", "YY", "ZZ"))
+  levels(stack[["BCLCS_LV_1"]]) <- data.frame(value = c(1L, 9L), label = c("N", "X"))
+  levels(stack[["BCLCS_LV_2"]]) <- data.frame(value = c(2L, 9L), label = c("W", "X"))
+  levels(stack[["BCLCS_LV_5"]]) <- data.frame(value = c(2L, 9L), label = c("LA", "X"))
+
+  result <- terra_rrm_correct_small_lakes(stack, buffer_m = 1000)
+  raster_conv <- .terra_rrm_get_raster_conv()
+  ow_code <- .terra_rrm_layer_codes(result, "BEUMC_S1", "OW", raster_conv$bem, strict = FALSE)[[1]]
+
+  expect_equal(as.vector(terra::values(result[["BEUMC_S1"]])), c(ow_code, ow_code, ow_code))
+  expect_true(all(is.na(as.vector(terra::values(result[["SPEC_CD_1"]])))))
+})
+
 test_that("terra_rrm_correct_bem_from_wetlands applies primary WL add/remove transitions", {
   skip_if_not_installed("terra")
 
@@ -455,6 +499,26 @@ test_that(".terra_rrm_apply_river_adjacency_stage updates SITE_M3A from the rive
 
   result <- .terra_rrm_apply_river_adjacency_stage(stack)
   expect_equal(as.vector(terra::values(result[["SITE_M3A"]])), c(2, 1, 1))
+})
+
+test_that(".terra_rrm_apply_river_adjacency_stage can buffer river adjacency", {
+  skip_if_not_installed("terra")
+
+  make_raster <- function(name, values) {
+    raster <- terra::rast(nrows = 1, ncols = length(values), xmin = 0, xmax = length(values) * 1000, ymin = 0, ymax = 1000, crs = "EPSG:3005")
+    terra::values(raster) <- values
+    names(raster) <- name
+    raster
+  }
+
+  stack <- c(
+    make_raster("SITE_M3A", rep(2L, 5)),
+    make_raster("rivers", c(0, 0, 1, 0, 0))
+  )
+  levels(stack[["SITE_M3A"]]) <- data.frame(value = c(1L, 2L), label = c("a", "b"))
+
+  result <- .terra_rrm_apply_river_adjacency_stage(stack, buffer_m = 1000)
+  expect_equal(as.vector(terra::values(result[["SITE_M3A"]])), c(2, 1, 1, 1, 2))
 })
 
 test_that("terra_rrm_correct_bem_from_vri consolidates duplicates and applies primary rules", {

@@ -6,23 +6,27 @@
 
 #' Derive per-cell terrain layers from the stacked elevation layer
 #'
-#' Computes `MEAN_SLOPE` (slope in percent, matching the `downscale_elevation`
-#' convention: radians * 57.29578 / 90) and `ABOVE_ELEV_THOLD` ("Y"/"N" factor)
-#' from the `elevation` layer already present in the input stack, and adds them
-#' as new layers.  Must be called after `.terra_rrm_read_input_stack()` and
-#' before any correction step that depends on slope or the elevation threshold.
+#' Computes `ELEV`, `MEAN_SLOPE`, `MEAN_ASP`, `ABOVE_ELEV_THOLD`, and
+#' `SLOPE_MOD` from the `elevation` layer already present in the input stack,
+#' and adds them as new layers. Must be called after
+#' `.terra_rrm_read_input_stack()` and before correction steps that depend on
+#' terrain or elevation-threshold attributes.
 #'
 #' @param x A `SpatRaster` containing an `elevation` layer (raw DEM values in
 #'   metres).
 #' @param elevation_threshold Numeric. Elevation (m) above which
 #'   `ABOVE_ELEV_THOLD` is set to `"Y"`.
+#' @param terrain_raster Optional `SpatRaster` with `slope` and `aspect`
+#'   layers in radians. When omitted, terrain layers are derived from
+#'   `elevation` using [terra::terrain()].
 #' @param filename Optional path to write the augmented stack to disk.
 #' @param overwrite Logical passed to `terra::writeRaster`.
-#' @return The input `SpatRaster` with two additional layers: `MEAN_SLOPE` and
-#'   `ABOVE_ELEV_THOLD`.
+#' @return The input `SpatRaster` with five additional layers: `ELEV`,
+#'   `MEAN_SLOPE`, `MEAN_ASP`, `ABOVE_ELEV_THOLD`, and `SLOPE_MOD`.
 #' @export
 terra_rrm_compute_terrain_layers <- function(x,
                                              elevation_threshold,
+                                             terrain_raster = NULL,
                                              filename = NULL,
                                              overwrite = FALSE) {
   stopifnot(inherits(x, "SpatRaster"))
@@ -32,13 +36,45 @@ terra_rrm_compute_terrain_layers <- function(x,
     stop("terra_rrm_compute_terrain_layers: 'elevation' layer not found in input stack.", call. = FALSE)
   }
 
+  required_for_slope_mod <- c("BGC_ZONE", "BEUMC_S1", "BEUMC_S2", "BEUMC_S3")
+  missing_for_slope_mod <- setdiff(required_for_slope_mod, names(x))
+  if (length(missing_for_slope_mod) > 0L) {
+    stop(
+      sprintf(
+        "terra_rrm_compute_terrain_layers: missing required layers for SLOPE_MOD derivation: %s",
+        paste(missing_for_slope_mod, collapse = ", ")
+      ),
+      call. = FALSE
+    )
+  }
+
   elev_layer <- x[["elevation"]]
 
-  # Slope in percent: terra::terrain returns radians, convert to % using same
-  # formula as downscale_elevation(): radians * 57.29578 / 90
-  slope_rad <- terra::terrain(elev_layer, v = "slope", unit = "radians")
-  mean_slope <- slope_rad * (57.29578 / 90)
+  terrain_layers <- terrain_raster
+  if (is.null(terrain_layers)) {
+    terrain_layers <- terra::terrain(elev_layer, v = c("slope", "aspect"), unit = "radians")
+  }
+  if (!inherits(terrain_layers, "SpatRaster") || !all(c("slope", "aspect") %in% names(terrain_layers))) {
+    stop("terrain_raster must be a SpatRaster with 'slope' and 'aspect' layers.", call. = FALSE)
+  }
+  slope_rad <- terrain_layers[["slope"]]
+  aspect_rad <- terrain_layers[["aspect"]]
+
+  # Slope in percent with the same conversion as merge_elevation_duckdb.
+  mean_slope <- slope_rad * (57.29578 / 90 * 100)
   names(mean_slope) <- "MEAN_SLOPE"
+
+  # Keep aspect undefined over flat cells (slope <= 0), mirroring sf/duckdb
+  # behaviour that excludes flat terrain from circular means.
+  mean_asp <- terra::ifel(
+    !is.na(slope_rad) & slope_rad > 0,
+    (aspect_rad * 57.29578 + 360) %% 360,
+    NA
+  )
+  names(mean_asp) <- "MEAN_ASP"
+
+  elev_out <- elev_layer
+  names(elev_out) <- "ELEV"
 
   # ABOVE_ELEV_THOLD: "Y" where elevation > threshold, "N" otherwise.
   # Stored as an integer-coded factor (1 = "N", 2 = "Y") to match raster_conv.
@@ -47,9 +83,50 @@ terra_rrm_compute_terrain_layers <- function(x,
   levels(above_raw) <- data.frame(value = c(1L, 2L), label = c("N", "Y"))
   names(above_raw) <- "ABOVE_ELEV_THOLD"
 
-  # Only the 2 new terrain layers are written — x is already on disk.
+  raster_conv <- .terra_rrm_get_raster_conv()
+  no_slope_mod_MC <- c("LL", "LS", "LA", "La", "OW", "Pd", "PD", "RE", "RI", "Ri", "Wa", "WE", "Wm", "Ww", "Ws", "WL")
+  excluded_s1 <- .terra_rrm_layer_codes(x, "BEUMC_S1", no_slope_mod_MC, raster_conv$bem, strict = FALSE)
+  excluded_s2 <- .terra_rrm_layer_codes(x, "BEUMC_S2", no_slope_mod_MC, raster_conv$bem, strict = FALSE)
+  excluded_s3 <- .terra_rrm_layer_codes(x, "BEUMC_S3", no_slope_mod_MC, raster_conv$bem, strict = FALSE)
+  cwh_mh_codes <- .terra_rrm_layer_codes(x, "BGC_ZONE", c("CWH", "MH"), raster_conv$bem, strict = FALSE)
+
+  is_excluded_beumc <-
+    .terra_rrm_match_codes(x[["BEUMC_S1"]], excluded_s1) == 1 |
+    .terra_rrm_match_codes(x[["BEUMC_S2"]], excluded_s2) == 1 |
+    .terra_rrm_match_codes(x[["BEUMC_S3"]], excluded_s3) == 1
+  is_cwh_mh <- .terra_rrm_match_codes(x[["BGC_ZONE"]], cwh_mh_codes) == 1
+  asp_cool <- !is.na(mean_asp) & (mean_asp >= 285 | mean_asp <= 134)
+  asp_warm <- !is.na(mean_asp) & (mean_asp >= 135 & mean_asp <= 284)
+
+  slope_mod <- terra::ifel(!is.na(mean_slope) & !is.na(mean_asp) & !is_excluded_beumc & is_cwh_mh & asp_cool & mean_slope >= 10 & mean_slope < 35, 1L, NA)
+  slope_mod <- terra::ifel(!is.na(mean_slope) & !is.na(mean_asp) & !is_excluded_beumc & is_cwh_mh & asp_cool & mean_slope >= 35 & mean_slope <= 100, 2L, slope_mod)
+  slope_mod <- terra::ifel(!is.na(mean_slope) & !is.na(mean_asp) & !is_excluded_beumc & is_cwh_mh & asp_cool & mean_slope > 100, 3L, slope_mod)
+  slope_mod <- terra::ifel(!is.na(mean_slope) & !is.na(mean_asp) & !is_excluded_beumc & is_cwh_mh & asp_warm & mean_slope >= 10 & mean_slope < 35, 1L, slope_mod)
+  slope_mod <- terra::ifel(!is.na(mean_slope) & !is.na(mean_asp) & !is_excluded_beumc & is_cwh_mh & asp_warm & mean_slope >= 35 & mean_slope <= 100, 4L, slope_mod)
+  slope_mod <- terra::ifel(!is.na(mean_slope) & !is.na(mean_asp) & !is_excluded_beumc & is_cwh_mh & asp_warm & mean_slope > 100, 5L, slope_mod)
+  slope_mod <- terra::ifel(!is.na(mean_slope) & !is.na(mean_asp) & !is_excluded_beumc & !is_cwh_mh & asp_cool & mean_slope >= 10 & mean_slope < 25, 1L, slope_mod)
+  slope_mod <- terra::ifel(!is.na(mean_slope) & !is.na(mean_asp) & !is_excluded_beumc & !is_cwh_mh & asp_cool & mean_slope >= 25 & mean_slope <= 100, 2L, slope_mod)
+  slope_mod <- terra::ifel(!is.na(mean_slope) & !is.na(mean_asp) & !is_excluded_beumc & !is_cwh_mh & asp_cool & mean_slope > 100, 3L, slope_mod)
+  slope_mod <- terra::ifel(!is.na(mean_slope) & !is.na(mean_asp) & !is_excluded_beumc & !is_cwh_mh & asp_warm & mean_slope >= 10 & mean_slope < 25, 1L, slope_mod)
+  slope_mod <- terra::ifel(!is.na(mean_slope) & !is.na(mean_asp) & !is_excluded_beumc & !is_cwh_mh & asp_warm & mean_slope >= 25 & mean_slope <= 100, 4L, slope_mod)
+  slope_mod <- terra::ifel(!is.na(mean_slope) & !is.na(mean_asp) & !is_excluded_beumc & !is_cwh_mh & asp_warm & mean_slope > 100, 5L, slope_mod)
+  names(slope_mod) <- "SLOPE_MOD"
+  levels(slope_mod) <- data.frame(
+    value = c(1L, 2L, 3L, 4L, 5L),
+    label = c("j", "k", "q", "w", "z"),
+    stringsAsFactors = FALSE
+  )
+  names(slope_mod) <- "SLOPE_MOD"
+
+  # Overwrite any existing terrain-derived layers while preserving all others.
+  drop_existing <- intersect(names(x), c("ELEV", "MEAN_SLOPE", "MEAN_ASP", "ABOVE_ELEV_THOLD", "SLOPE_MOD"))
+  if (length(drop_existing) > 0L) {
+    x <- x[[setdiff(names(x), drop_existing)]]
+  }
+
+  # Only the new terrain layers are written — x is already on disk.
   # The returned SpatRaster is a zero-copy virtual multi-source stack.
-  terrain_stack <- c(mean_slope, above_raw)
+  terrain_stack <- c(elev_out, mean_slope, mean_asp, above_raw, slope_mod)
 
   if (is.null(filename)) {
     return(c(x, terrain_stack))
@@ -76,9 +153,12 @@ set_raster_levels_from_conv <- function(x, factor_conv_list) {
       next
     }
 
+    labels <- as.character(lookup_dt[["value"]])
+    labels[is.na(labels)] <- ""
+
     levels(x[[layer_name]]) <- data.frame(
       value = lookup_dt[["factor"]],
-      label = lookup_dt[["value"]],
+      label = labels,
       stringsAsFactors = FALSE
     )
   }

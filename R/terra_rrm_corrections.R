@@ -366,7 +366,24 @@
 }
 
 
+.terra_rrm_expand_presence_mask <- function(layer, buffer_m = 0) {
+  stopifnot(inherits(layer, "SpatRaster"), terra::nlyr(layer) == 1L)
+  if (!is.numeric(buffer_m) || length(buffer_m) != 1L || is.na(buffer_m) || buffer_m < 0) {
+    stop("buffer_m must be a single non-missing numeric value >= 0.", call. = FALSE)
+  }
+
+  presence_mask <- terra::ifel(!is.na(layer) & layer > 0, 1, NA)
+  if (buffer_m == 0) {
+    return(presence_mask)
+  }
+
+  distance_to_presence <- terra::distance(presence_mask)
+  terra::ifel(!is.na(distance_to_presence) & distance_to_presence <= buffer_m, 1, NA)
+}
+
+
 .terra_rrm_apply_river_adjacency_stage <- function(x, rivers_layer = "rivers",
+                                                    buffer_m = 0,
                                                     filename = NULL, overwrite = FALSE) {
   stopifnot(inherits(x, "SpatRaster"))
   if (!rivers_layer %in% names(x) || !"SITE_M3A" %in% names(x)) {
@@ -378,11 +395,7 @@
     return(x)
   }
 
-  base_mask <- terra::ifel(!is.na(x[[rivers_layer]]), 1, NA)
-  river_mask <- .terra_rrm_rule_mask(
-    base_mask,
-    terra::ifel(x[[rivers_layer]] == 1, 1, NA)
-  )
+  river_mask <- .terra_rrm_expand_presence_mask(x[[rivers_layer]], buffer_m = buffer_m)
 
   result <- .terra_rrm_apply_constant(x, "SITE_M3A", river_mask, site_a_code)
 
@@ -1092,12 +1105,16 @@ terra_rrm_correct_bem_from_wetlands_riparian_stage <- function(x,
 #' @param x A `terra::SpatRaster` containing aligned VRI/BEM layers and a lake
 #'   presence layer.
 #' @param lake_layer Name of the raster layer indicating lake presence.
+#' @param buffer_m Optional non-negative buffer distance in raster map units.
+#'   When `> 0`, classified lake patches are expanded before their recoded
+#'   values are applied to the raster stack.
 #' @param directions Connectivity passed to [terra::patches()].
 #' @param filename Optional filename for writing the corrected stack.
 #' @param overwrite Logical passed to terra writes.
 #' @return A `SpatRaster` with lake patches corrected in place.
 terra_rrm_correct_small_lakes <- function(x,
                                           lake_layer = "lakes",
+                                          buffer_m = 0,
                                           directions = 8,
                                           filename = NULL,
                                           overwrite = FALSE) {
@@ -1121,13 +1138,13 @@ terra_rrm_correct_small_lakes <- function(x,
 
   lake_codes <- .terra_rrm_layer_codes(result, "BEUMC_S1", c("OW", "LS", "LL"), raster_conv$bem, strict = FALSE)
   lake_class_mask <- .terra_rrm_match_codes(result[["BEUMC_S1"]], lake_codes)
-  candidate_mask <- .terra_rrm_rule_mask(
+  lake_mask_seed <- .terra_rrm_rule_mask(
     .terra_rrm_non_missing_mask(result),
     terra::ifel(result[[lake_layer]] > 0, 1, NA),
     terra::ifel(lake_class_mask == 0, 1, NA)
   )
 
-  lake_patches <- terra::patches(terra::ifel(candidate_mask[[1]] == 1, 1, NA), directions = directions)
+  lake_patches <- terra::patches(terra::ifel(lake_mask_seed[[1]] == 1, 1, NA), directions = directions)
   patch_freq <- terra::freq(lake_patches)
 
   if (!is.null(patch_freq) && nrow(patch_freq) > 0L) {
@@ -1145,9 +1162,19 @@ terra_rrm_correct_small_lakes <- function(x,
     )
 
     patch_classes <- terra::subst(lake_patches, from = patch_freq$value, to = patch_codes, others = NA)
-    lake_mask <- terra::ifel(!is.na(patch_classes), 1, NA)
 
-    result <- .terra_rrm_apply_values(result, "BEUMC_S1", lake_mask, patch_classes)
+    buffered_patch_classes <- patch_classes
+    if (buffer_m > 0) {
+      for (class_code in c(ow_code, ls_code, ll_code)) {
+        class_seed <- terra::ifel(patch_classes == class_code, 1, NA)
+        class_mask <- .terra_rrm_expand_presence_mask(class_seed, buffer_m = buffer_m)
+        buffered_patch_classes <- terra::ifel(class_mask[[1]] == 1, class_code, buffered_patch_classes)
+      }
+    }
+
+    lake_mask <- terra::ifel(!is.na(buffered_patch_classes), 1, NA)
+
+    result <- .terra_rrm_apply_values(result, "BEUMC_S1", lake_mask, buffered_patch_classes)
     result <- .terra_rrm_apply_constant(result, "SDEC_1", lake_mask, 10)
     result <- .terra_rrm_apply_constant(result, "SDEC_2", lake_mask, 0)
     result <- .terra_rrm_apply_constant(result, "SDEC_3", lake_mask, 0)

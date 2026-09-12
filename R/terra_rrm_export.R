@@ -8,9 +8,17 @@
   categories <- terra::cats(x[[layer_name]])[[1]]
 
   if (is.null(categories) || ncol(categories) < 2L) {
+    if (identical(layer_name, "SLOPE_MOD")) {
+      categories <- data.frame(
+        value = c(1L, 2L, 3L, 4L, 5L),
+        label = c("j", "k", "q", "w", "z"),
+        stringsAsFactors = FALSE
+      )
+    }
+
     raster_conv <- .terra_rrm_get_raster_conv()
     lookup_source <- if (layer_name %in% names(raster_conv$bem)) raster_conv$bem[[layer_name]] else if (layer_name %in% names(raster_conv$vri)) raster_conv$vri[[layer_name]] else NULL
-    if (!is.null(lookup_source) && nrow(lookup_source) > 0L) {
+    if ((is.null(categories) || ncol(categories) < 2L) && !is.null(lookup_source) && nrow(lookup_source) > 0L) {
       categories <- data.frame(value = lookup_source[["factor"]], label = lookup_source[["value"]], stringsAsFactors = FALSE)
     }
   }
