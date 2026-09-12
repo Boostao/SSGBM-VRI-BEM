@@ -24,21 +24,26 @@ calc_capability_rating <- function(rrm_dt, animal) {
 
   data.table::setDT(rrm_dt)
   rating_variables <- grep("_6C$", names(rrm_dt), value = TRUE)
+  rsi_variables <- sub("_6C$", "_RSI", rating_variables)
   cap_rating_variables <- paste0(rating_variables, "_CAP")
+  cap_rsi_variables <- paste0(rsi_variables, "_CAP")
 
-   if (animal == "bear") {
-   rrm_dt[ , (cap_rating_variables) := lapply(.SD, min, na.rm=TRUE), by = .(Eco_sec, Bgc_zone, Bgc_subzon, Bgc_vrt, Bgc_phase, Beumc, Slope_mod, Site_m3a, Salmon, Snow_code, Above_Elev_Thold, Crown_all), .SDcols = (rating_variables)]
-
+  has_rsi_variables <- rsi_variables %in% names(rrm_dt)
+  if (any(has_rsi_variables) && !all(has_rsi_variables)) {
+    stop("rrm_dt must contain matching '*_RSI' columns for each '*_6C' rating column", call. = FALSE)
   }
 
-  if (animal == "moose") {
-  rrm_dt[ , (cap_rating_variables) := lapply(.SD, min, na.rm=TRUE), by = .(Eco_sec, Bgc_zone, Bgc_subzon, Bgc_vrt, Bgc_phase, Beumc, Slope_mod, Site_m3a, Snow_code, Above_Elev_Thold, Crown_all), .SDcols = (rating_variables)]
+  group_cols <- switch(
+    animal,
+    bear = c("Eco_sec", "Bgc_zone", "Bgc_subzon", "Bgc_vrt", "Bgc_phase", "Beumc", "Slope_mod", "Site_m3a", "Salmon", "Snow_code", "Above_Elev_Thold", "Crown_all"),
+    moose = c("Eco_sec", "Bgc_zone", "Bgc_subzon", "Bgc_vrt", "Bgc_phase", "Beumc", "Slope_mod", "Site_m3a", "Snow_code", "Above_Elev_Thold", "Crown_all"),
+    huckleberry = c("Eco_sec", "Bgc_zone", "Bgc_subzon", "Bgc_vrt", "Bgc_phase", "Huck_asp", "HUCK_ELEV_Thold", "Crown_All")
+  )
 
-  }
+  rrm_dt[, (cap_rating_variables) := lapply(.SD, .rrm_capability_rating_summary), by = group_cols, .SDcols = rating_variables]
 
-  if (animal == "huckleberry") {
-    rrm_dt[ , (cap_rating_variables) := lapply(.SD, min, na.rm=TRUE), by = .(Eco_sec, Bgc_zone, Bgc_subzon, Bgc_vrt, Bgc_phase, Huck_asp, HUCK_ELEV_Thold, Crown_All), .SDcols = (rating_variables)]
-
+  if (all(has_rsi_variables)) {
+    rrm_dt[, (cap_rsi_variables) := lapply(.SD, .rrm_capability_rsi_summary), by = group_cols, .SDcols = rsi_variables]
   }
 
   return(rrm_dt)

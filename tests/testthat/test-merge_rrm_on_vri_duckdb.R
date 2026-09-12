@@ -130,7 +130,9 @@ moose_rrm_fixture <- function() {
     STRCT = c("4", "5", NA_character_),
     STAND = c("C", "B", NA_character_),
     MALAN_WFD_6C = c(2, 4, 3),
+    MALAN_WFD_RSI = c(0.60, 0.20, 0.40),
     MALAN_GFD_6C = c(4, 2, 5),
+    MALAN_GFD_RSI = c(0.20, 0.60, 0.03),
     Hectares = c(10, 20, 30),
     stringsAsFactors = FALSE
   )
@@ -154,6 +156,7 @@ bear_rrm_fixture <- function() {
     STRCT = c("4", "4"),
     STAND = c("C", "C"),
     MURAR_PEFD_6C = c(2, 6),
+    MURAR_PEFD_RSI = c(0.60, 0.01),
     Hectares = c(11, 99),
     stringsAsFactors = FALSE
   )
@@ -173,6 +176,7 @@ huck_rrm_fixture <- function() {
     STRCT = "4",
     STAND = "C",
     VACCMEM_6C = 4,
+    VACCMEM_RSI = 0.20,
     Hectares = 7,
     stringsAsFactors = FALSE
   )
@@ -317,6 +321,68 @@ test_that("merge_rrm_on_vri_duckdb matches merge_rrm_on_vri for huckleberry fixt
 
   res <- compare_merge_outputs(vri_df, huck_rrm_fixture(), animal = "huckleberry")
   expect_equal(res$actual, res$expected, ignore_attr = TRUE)
+})
+
+
+test_that("merge_rrm_on_vri keeps RSI outputs and derives weighted ratings from weighted RSI", {
+  vri_df <- base_vri_row(
+    SDEC_1 = 4,
+    SDEC_2 = 6,
+    SDEC_3 = 0,
+    BEUMC_S1 = "MC1",
+    BEUMC_S2 = "MC2",
+    BEUMC_S3 = NA_character_,
+    CROWN_ALL_1 = "M",
+    CROWN_ALL_2 = "H",
+    CROWN_ALL_3 = NA_character_
+  )
+
+  rrm_df <- data.table::as.data.table(moose_rrm_fixture())
+  data.table::set(rrm_df, i = which(rrm_df$BEUMC == "MC1"), j = c("MALAN_WFD_6C", "MALAN_WFD_RSI"), value = list(1, 0.80))
+  data.table::set(rrm_df, i = which(rrm_df$BEUMC == "MC2"), j = c("MALAN_WFD_6C", "MALAN_WFD_RSI"), value = list(6, 0.00))
+
+  out <- merge_rrm_on_vri(
+    vri_bem = data.table::copy(vri_df),
+    rrm_dt = data.table::copy(data.table::as.data.table(normalize_rrm_fixture_names(rrm_df, animal = "moose"))),
+    animal = "moose",
+    return_sf = FALSE
+  )
+
+  expect_equal(out$MALAN_WFD_RSI_SU_1, 0.80)
+  expect_equal(out$MALAN_WFD_RSI_SU_2, 0.00)
+  expect_equal(out$MALAN_WFD_RSI_SU_WA, 0.32)
+  expect_equal(out$MALAN_WFD_6C_SU_WA, 3)
+  expect_equal(out$MALAN_WFD_RSI_CAP_1, 0.80)
+  expect_equal(out$MALAN_WFD_RSI_CAP_2, 0.00)
+  expect_equal(out$MALAN_WFD_RSI_CAP_WA, 0.32)
+  expect_equal(out$MALAN_WFD_6C_CAP_WA, 3)
+})
+
+
+test_that("merge_rrm_on_vri leaves weighted averages NA when primary RSI is missing", {
+  vri_df <- base_vri_row(
+    SDEC_1 = 4,
+    SDEC_2 = 6,
+    SDEC_3 = 0,
+    BEUMC_S1 = "NO_MATCH",
+    BEUMC_S2 = "MC2",
+    BEUMC_S3 = NA_character_,
+    CROWN_ALL_1 = "M",
+    CROWN_ALL_2 = "H",
+    CROWN_ALL_3 = NA_character_
+  )
+
+  out <- merge_rrm_on_vri(
+    vri_bem = data.table::copy(vri_df),
+    rrm_dt = data.table::copy(data.table::as.data.table(normalize_rrm_fixture_names(moose_rrm_fixture(), animal = "moose"))),
+    animal = "moose",
+    return_sf = FALSE
+  )
+
+  expect_true(is.na(out$MALAN_WFD_RSI_SU_WA))
+  expect_true(is.na(out$MALAN_WFD_6C_SU_WA))
+  expect_true(is.na(out$MALAN_WFD_RSI_CAP_WA))
+  expect_true(is.na(out$MALAN_WFD_6C_CAP_WA))
 })
 
 

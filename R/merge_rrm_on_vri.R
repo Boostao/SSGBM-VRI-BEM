@@ -10,6 +10,70 @@
 #' @return vri-bem object with new columns for rating
 #' @import data.table
 #' @export
+.rrm_value_to_rating <- function(x) {
+  cut(
+    signif(x, digits = 3),
+    breaks = c(-Inf, 0, 0.05, 0.25, 0.5, 0.75, Inf),
+    labels = c(6L, 5L, 4L, 3L, 2L, 1L),
+    right = TRUE
+  ) |>
+    as.character() |>
+    as.integer()
+}
+
+
+.rrm_weighted_average_rsi <- function(vri_bem, value_cols) {
+  weights <- as.matrix(vri_bem[, c("SDEC_1", "SDEC_2", "SDEC_3"), with = FALSE])
+  values <- as.matrix(vri_bem[, value_cols, with = FALSE])
+
+  storage.mode(weights) <- "double"
+  storage.mode(values) <- "double"
+
+  valid <- !is.na(values)
+  numer <- rowSums(values * weights, na.rm = TRUE)
+  denom <- rowSums(weights * valid)
+  result <- numer / denom
+  result[is.na(values[, 1]) | denom == 0] <- NA_real_
+
+  result
+}
+
+
+.rrm_capability_rating_summary <- function(x) {
+  if (all(is.na(x))) {
+    return(NA_real_)
+  }
+
+  min(x, na.rm = TRUE)
+}
+
+
+.rrm_capability_rsi_summary <- function(x) {
+  if (all(is.na(x))) {
+    return(NA_real_)
+  }
+
+  max(x, na.rm = TRUE)
+}
+
+
+.rrm_suitability_special_rows <- function(vri_bem, decile) {
+  forested_col <- sprintf("FORESTED_%d", decile)
+  strct_col <- sprintf("STRCT_S%d", decile)
+  climax_col <- sprintf("STS_CLIMAX_%d", decile)
+
+  which(
+    (vri_bem[[forested_col]] == "Y" &
+       vri_bem[[strct_col]] == "7a" &
+       vri_bem[["VRI_AGE_CL_STS"]] == -1) |
+      (vri_bem[[forested_col]] == "N" &
+         is.na(vri_bem[[strct_col]]) &
+         vri_bem[["ABOVE_ELEV_THOLD"]] == "N" &
+         !is.na(vri_bem[[climax_col]]))
+  )
+}
+
+
 merge_rrm_on_vri <- function(vri_bem, rrm_dt, animal, return_sf = TRUE) {
 
   if (FALSE) {
@@ -27,14 +91,46 @@ merge_rrm_on_vri <- function(vri_bem, rrm_dt, animal, return_sf = TRUE) {
   rrm_dt <- calc_capability_rating(rrm_dt = rrm_dt, animal = animal)
 
 
-  rating_variables <- grep("_6C$", names(rrm_dt), value = T)
+  rating_variables <- grep("_6C$", names(rrm_dt), value = TRUE)
+  rsi_variables <- sub("_6C$", "_RSI", rating_variables)
   cap_rating_variables <- paste0(rating_variables, "_CAP")
+  cap_rsi_variables <- paste0(rsi_variables, "_CAP")
 
-  variables_merge_expr <- paste0("list(", paste(paste0("", c(rating_variables, cap_rating_variables , "Hectares")), collapse = ","), ")")
+  has_rsi_variables <- rsi_variables %in% names(rrm_dt)
+  if (any(has_rsi_variables) && !all(has_rsi_variables)) {
+    stop("rrm_dt must contain matching '*_RSI' columns for each '*_6C' rating column", call. = FALSE)
+  }
+  if (!all(has_rsi_variables)) {
+    stop("rrm_dt must contain matching '*_RSI' columns for each '*_6C' rating column", call. = FALSE)
+  }
 
-  first_decile_variables <- c(paste0(rating_variables, "_SU_1"), paste0(cap_rating_variables, "_1"), "Hectares_1")
-  second_decile_variables <- c(paste0(rating_variables, "_SU_2"), paste0(cap_rating_variables, "_2"), "Hectares_2")
-  third_decile_variables <- c(paste0(rating_variables, "_SU_3"), paste0(cap_rating_variables, "_3"), "Hectares_3")
+  variables_merge_expr <- paste0(
+    "list(",
+    paste(c(rating_variables, rsi_variables, cap_rating_variables, cap_rsi_variables, "Hectares"), collapse = ","),
+    ")"
+  )
+
+  first_decile_variables <- c(
+    paste0(rating_variables, "_SU_1"),
+    paste0(rsi_variables, "_SU_1"),
+    paste0(cap_rating_variables, "_1"),
+    paste0(cap_rsi_variables, "_1"),
+    "Hectares_1"
+  )
+  second_decile_variables <- c(
+    paste0(rating_variables, "_SU_2"),
+    paste0(rsi_variables, "_SU_2"),
+    paste0(cap_rating_variables, "_2"),
+    paste0(cap_rsi_variables, "_2"),
+    "Hectares_2"
+  )
+  third_decile_variables <- c(
+    paste0(rating_variables, "_SU_3"),
+    paste0(rsi_variables, "_SU_3"),
+    paste0(cap_rating_variables, "_3"),
+    paste0(cap_rsi_variables, "_3"),
+    "Hectares_3"
+  )
 
   if (animal == "bear") {
     merge_rating_bear(vri_bem = vri_bem,
@@ -65,109 +161,68 @@ merge_rrm_on_vri <- function(vri_bem, rrm_dt, animal, return_sf = TRUE) {
 
   vri_bem[ , rrm_merge_ind := !is.na(fcoalesce(Hectares_1, Hectares_2, Hectares_3))]
 
-  # calc highest suitability value ----
+  suit_special_rows <- lapply(1:3, function(decile) .rrm_suitability_special_rows(vri_bem, decile))
 
-  which_na_list <- list()
-  for (suitability_variable in rating_variables) {
+  for (idx in seq_along(rating_variables)) {
+    rating_variable <- rating_variables[[idx]]
+    rsi_variable <- rsi_variables[[idx]]
+    cap_variable <- cap_rating_variables[[idx]]
+    cap_rsi_variable <- cap_rsi_variables[[idx]]
 
-    first_suit_var <- paste0(suitability_variable, "_SU_1")
-    second_suit_var <- paste0(suitability_variable, "_SU_2")
-    third_suit_var <- paste0(suitability_variable, "_SU_3")
-    high_value_suit_var <- paste0(suitability_variable, "_SU_HV")
-    weighted_average_suit_var <- paste0(suitability_variable, "_SU_WA")
+    suit_vars <- paste0(rating_variable, "_SU_", 1:3)
+    suit_rsi_vars <- paste0(rsi_variable, "_SU_", 1:3)
+    high_value_suit_var <- paste0(rating_variable, "_SU_HV")
+    weighted_average_suit_var <- paste0(rating_variable, "_SU_WA")
+    weighted_average_suit_rsi_var <- paste0(rsi_variable, "_SU_WA")
 
-    # assign temporary worst rating  to rating NA to make calculation of best rating easier
-    set(vri_bem, i = which((vri_bem[["FORESTED_1"]] == "Y" & vri_bem[["STRCT_S1"]] == "7a" & vri_bem[["VRI_AGE_CL_STS"]] == -1) | (vri_bem[["FORESTED_1"]] == "N" & is.na(vri_bem[["STRCT_S1"]]) & vri_bem[["ABOVE_ELEV_THOLD"]] == "N") & !is.na(vri_bem[["STS_CLIMAX_1"]])), j = first_suit_var, value = NA)
-    set(vri_bem, i = which((vri_bem[["FORESTED_2"]] == "Y" & vri_bem[["STRCT_S2"]] == "7a" & vri_bem[["VRI_AGE_CL_STS"]] == -1) | (vri_bem[["FORESTED_2"]] == "N" & is.na(vri_bem[["STRCT_S2"]]) & vri_bem[["ABOVE_ELEV_THOLD"]] == "N") & !is.na(vri_bem[["STS_CLIMAX_2"]])), j = second_suit_var, value = NA)
-    set(vri_bem, i = which((vri_bem[["FORESTED_3"]] == "Y" & vri_bem[["STRCT_S3"]] == "7a" & vri_bem[["VRI_AGE_CL_STS"]] == -1) | (vri_bem[["FORESTED_3"]] == "N" & is.na(vri_bem[["STRCT_S3"]]) & vri_bem[["ABOVE_ELEV_THOLD"]] == "N") & !is.na(vri_bem[["STS_CLIMAX_3"]])), j = third_suit_var, value = NA)
-
-    set(vri_bem, i = which(vri_bem[[first_suit_var]] > 6), j = first_suit_var, value = NA)
-    set(vri_bem, i = which(vri_bem[[second_suit_var]] > 6), j = second_suit_var, value = NA)
-    set(vri_bem, i = which(vri_bem[[third_suit_var]] > 6), j = third_suit_var, value = NA)
-
-    which_na_list[[first_suit_var]] <- which(is.na(vri_bem[[first_suit_var]]))
-    which_na_list[[second_suit_var]] <- which(is.na(vri_bem[[second_suit_var]]))
-    which_na_list[[third_suit_var]] <- which(is.na(vri_bem[[third_suit_var]]))
-
-    set(vri_bem, i = which_na_list[[first_suit_var]], j = first_suit_var, value = 9)
-    set(vri_bem, i = which_na_list[[second_suit_var]], j = second_suit_var, value = 9)
-    set(vri_bem, i = which_na_list[[third_suit_var]], j = third_suit_var, value = 9)
-
-    # calc best rating
-    fcase_expr <- parse_expr(paste0("fcase((",first_suit_var," <= ", second_suit_var, ") & (", first_suit_var, " <= ", third_suit_var, "), as.numeric(", first_suit_var, "),
-                                            ", second_suit_var, " <= ", third_suit_var, ", as.numeric(", second_suit_var, "),
-                                            ", third_suit_var, " <= ", second_suit_var, ", as.numeric(", third_suit_var, "),
-                                            default = NA)"))
-    vri_bem[, (high_value_suit_var) := eval(fcase_expr)]
-
-    set(vri_bem, i = which(vri_bem[[high_value_suit_var]] > 8), j = high_value_suit_var, value = NA)
-
-    # calc weighted suitability rating ----
-
-    # don't consider a rating that had not match in the RRM output but has percentage > 0
-    set(vri_bem, i = which_na_list[[first_suit_var]], j = first_suit_var, value = 0)
-    set(vri_bem, i = which_na_list[[second_suit_var]], j = second_suit_var, value = 0)
-    set(vri_bem, i = which_na_list[[third_suit_var]], j = third_suit_var, value = 0)
-
-    wa_expr <- parse_expr(paste0("round(((", first_suit_var, " * SDEC_1) + (", second_suit_var, " * SDEC_2) + (", third_suit_var, "* SDEC_3))/(SDEC_1 * (", first_suit_var, " != 0) + SDEC_2 * (", second_suit_var, " != 0) + SDEC_3 * (", third_suit_var, " != 0) ))"))
-    vri_bem[, (weighted_average_suit_var) := eval(wa_expr)]
-    set(vri_bem, i = which(vri_bem[[weighted_average_suit_var]] > 6 | vri_bem[[weighted_average_suit_var]] == 0 | is.nan(vri_bem[[weighted_average_suit_var]]) | is.nan(vri_bem[[first_suit_var]]) | vri_bem[[first_suit_var]] == 0), j = weighted_average_suit_var, value = NA)
-    # weighted_average should be NA if missing first suitability value
-
-  }
-
-  # calc highest capability value ----
-
-  for (cap_variable in cap_rating_variables) {
-    first_cap_var <- paste0(cap_variable, "_1")
-    second_cap_var <- paste0(cap_variable, "_2")
-    third_cap_var <- paste0(cap_variable, "_3")
+    cap_vars <- paste0(cap_variable, "_", 1:3)
+    cap_rsi_vars <- paste0(cap_rsi_variable, "_", 1:3)
     high_value_cap_var <- paste0(cap_variable, "_HV")
     weighted_average_cap_var <- paste0(cap_variable, "_WA")
+    weighted_average_cap_rsi_var <- paste0(cap_rsi_variable, "_WA")
 
-    # assign temporary worst rating  to rating NA to make calculation of best rating easier
-    set(vri_bem, i = which(vri_bem[[first_cap_var]] > 6), j = first_cap_var, value = NA)
-    set(vri_bem, i = which(vri_bem[[second_cap_var]] > 6), j = second_cap_var, value = NA)
-    set(vri_bem, i = which(vri_bem[[third_cap_var]] > 6), j = third_cap_var, value = NA)
+    for (decile in 1:3) {
+      if (length(suit_special_rows[[decile]]) > 0L) {
+        set(
+          vri_bem,
+          i = suit_special_rows[[decile]],
+          j = c(suit_vars[[decile]], suit_rsi_vars[[decile]]),
+          value = NA
+        )
+      }
 
-    which_na_list[[first_cap_var]] <- which(is.na(vri_bem[[first_cap_var]]))
-    which_na_list[[second_cap_var]] <- which(is.na(vri_bem[[second_cap_var]]))
-    which_na_list[[third_cap_var]] <- which(is.na(vri_bem[[third_cap_var]]))
+      suit_invalid_rows <- which(vri_bem[[suit_vars[[decile]]]] > 6)
+      if (length(suit_invalid_rows) > 0L) {
+        set(vri_bem, i = suit_invalid_rows, j = c(suit_vars[[decile]], suit_rsi_vars[[decile]]), value = NA)
+      }
 
-    set(vri_bem, i = which_na_list[[first_cap_var]], j = first_cap_var, value = 9)
-    set(vri_bem, i = which_na_list[[second_cap_var]], j = second_cap_var, value = 9)
-    set(vri_bem, i = which_na_list[[third_cap_var]], j = third_cap_var, value = 9)
+      cap_invalid_rows <- which(vri_bem[[cap_vars[[decile]]]] > 6)
+      if (length(cap_invalid_rows) > 0L) {
+        set(vri_bem, i = cap_invalid_rows, j = c(cap_vars[[decile]], cap_rsi_vars[[decile]]), value = NA)
+      }
+    }
 
-    # calc best rating
-    fcase_expr <- parse_expr(paste0("fcase((",first_cap_var," <= ", second_cap_var, ") & (", first_cap_var, " <= ", third_cap_var, "), as.numeric(", first_cap_var, "),
-                                            ", second_cap_var, " <= ", third_cap_var, ", as.numeric(", second_cap_var, "),
-                                            ", third_cap_var, " <= ", second_cap_var, ", as.numeric(", third_cap_var, "),
-                                            default = NA)"))
-    vri_bem[, (high_value_cap_var) := eval(fcase_expr)]
+    suit_hv <- do.call(pmin, lapply(suit_vars, function(col) fcoalesce(vri_bem[[col]], 9)))
+    suit_hv[suit_hv > 8] <- NA_real_
+    set(vri_bem, j = high_value_suit_var, value = suit_hv)
 
-    set(vri_bem, i = which(vri_bem[[high_value_cap_var]] > 8), j = high_value_cap_var, value = NA)
+    suit_wa_rsi <- .rrm_weighted_average_rsi(vri_bem, suit_rsi_vars)
+    set(vri_bem, j = weighted_average_suit_rsi_var, value = suit_wa_rsi)
+    set(vri_bem, j = weighted_average_suit_var, value = .rrm_value_to_rating(suit_wa_rsi))
 
-    # calc weighted capability rating ----
+    cap_hv <- do.call(pmin, lapply(cap_vars, function(col) fcoalesce(vri_bem[[col]], 9)))
+    cap_hv[cap_hv > 8] <- NA_real_
+    set(vri_bem, j = high_value_cap_var, value = cap_hv)
 
-    # don't consider a rating that had not match in the RRM output but has percentage > 0
-    set(vri_bem, i = which_na_list[[first_cap_var]], j = first_cap_var, value = 0)
-    set(vri_bem, i = which_na_list[[second_cap_var]], j = second_cap_var, value = 0)
-    set(vri_bem, i = which_na_list[[third_cap_var]], j = third_cap_var, value = 0)
-
-    wa_expr <- parse_expr(paste0("round(((", first_cap_var, " * SDEC_1) + (", second_cap_var, " * SDEC_2) + (", third_cap_var, "* SDEC_3))/(SDEC_1 * (", first_cap_var, " != 0) + SDEC_2 * (", second_cap_var, " != 0) + SDEC_3 * (", third_cap_var, " != 0) ))")) #otherwise not calculating CAP properly (moose)
-    vri_bem[, (weighted_average_cap_var) := eval(wa_expr)]
-    set(vri_bem, i = which(vri_bem[[weighted_average_cap_var]] > 6 | is.nan(vri_bem[[first_cap_var]]) | vri_bem[[first_cap_var]] == 0), j = weighted_average_cap_var, value = NA)
-
+    cap_wa_rsi <- .rrm_weighted_average_rsi(vri_bem, cap_rsi_vars)
+    set(vri_bem, j = weighted_average_cap_rsi_var, value = cap_wa_rsi)
+    set(vri_bem, j = weighted_average_cap_var, value = .rrm_value_to_rating(cap_wa_rsi))
   }
 
   # rating for decile that are 0 should be NA
   set(vri_bem, i = which(vri_bem$SDEC_1 == 0), j = first_decile_variables, value = NA)
   set(vri_bem, i = which(vri_bem$SDEC_2 == 0), j = second_decile_variables, value = NA)
   set(vri_bem, i = which(vri_bem$SDEC_3 == 0), j = third_decile_variables, value = NA)
-
-  for (rating_variable in names(which_na_list)) {
-    set(vri_bem, i = which_na_list[[rating_variable]], j = rating_variable, value = NA)
-  }
 
   set(vri_bem, j = c("Hectares_1", "Hectares_2", "Hectares_3"), value = NULL)
 

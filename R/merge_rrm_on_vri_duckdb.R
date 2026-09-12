@@ -163,12 +163,12 @@
 
 .rrm_duckdb_weighted_avg_expr <- function(values, suffix) {
   numer <- paste(
-    sprintf("((%s) * j.SDEC_%d)", values, seq_along(values)),
+    sprintf("(COALESCE((%s), 0) * j.SDEC_%d)", values, seq_along(values)),
     collapse = " + "
   )
   denom <- paste(
     sprintf(
-      "(j.SDEC_%d * CASE WHEN (%s) != 0 THEN 1 ELSE 0 END)",
+      "(j.SDEC_%d * CASE WHEN (%s) IS NOT NULL THEN 1 ELSE 0 END)",
       seq_along(values),
       values
     ),
@@ -176,7 +176,7 @@
   )
 
   sprintf(
-    "ROUND((%s) / NULLIF((%s), 0))%s",
+    "((%s) / NULLIF((%s), 0))%s",
     numer,
     denom,
     suffix
@@ -184,10 +184,49 @@
 }
 
 
+.rrm_duckdb_signif_expr <- function(value_expr, digits = 3L) {
+  sprintf(
+    paste0(
+      "CASE ",
+      "WHEN (%1$s) IS NULL THEN NULL ",
+      "WHEN (%1$s) = 0 THEN 0 ",
+      "ELSE ROUND((%1$s), CAST(%2$d - CEIL(LOG10(ABS(%1$s))) AS INTEGER)) END"
+    ),
+    value_expr,
+    digits
+  )
+}
+
+
+.rrm_duckdb_value_to_rating_expr <- function(value_expr) {
+  signif_expr <- .rrm_duckdb_signif_expr(value_expr)
+
+  sprintf(
+    paste0(
+      "CASE ",
+      "WHEN (%1$s) IS NULL THEN NULL ",
+      "WHEN (%2$s) <= 0 THEN 6 ",
+      "WHEN (%2$s) <= 0.05 THEN 5 ",
+      "WHEN (%2$s) <= 0.25 THEN 4 ",
+      "WHEN (%2$s) <= 0.5 THEN 3 ",
+      "WHEN (%2$s) <= 0.75 THEN 2 ",
+      "ELSE 1 END"
+    ),
+    value_expr,
+    signif_expr
+  )
+}
+
+
 .rrm_duckdb_metric_sql <- function(rating_var) {
-  suit_raw <- sprintf("j.%s_RAW_%d", rating_var, 1:3)
+  rsi_var <- sub("_6C$", "_RSI", rating_var)
   cap_var <- paste0(rating_var, "_CAP")
+  cap_rsi_var <- paste0(rsi_var, "_CAP")
+
+  suit_raw <- sprintf("j.%s_RAW_%d", rating_var, 1:3)
+  suit_rsi_raw <- sprintf("j.%s_RAW_%d", rsi_var, 1:3)
   cap_raw <- sprintf("j.%s_RAW_%d", cap_var, 1:3)
+  cap_rsi_raw <- sprintf("j.%s_RAW_%d", cap_rsi_var, 1:3)
 
   suit_base <- mapply(
     .rrm_duckdb_suit_base_expr,
@@ -198,15 +237,34 @@
   )
   cap_base <- vapply(cap_raw, .rrm_duckdb_cap_base_expr, character(1))
 
+  suit_rsi_base <- sprintf(
+    "CASE WHEN (%s) IS NULL THEN NULL ELSE (%s) END",
+    suit_base,
+    suit_rsi_raw
+  )
+  cap_rsi_base <- sprintf(
+    "CASE WHEN (%s) IS NULL THEN NULL ELSE (%s) END",
+    cap_base,
+    cap_rsi_raw
+  )
+
   suit_9 <- sprintf("COALESCE((%s), 9)", suit_base)
-  suit_0 <- sprintf("COALESCE((%s), 0)", suit_base)
   cap_9 <- sprintf("COALESCE((%s), 9)", cap_base)
-  cap_0 <- sprintf("COALESCE((%s), 0)", cap_base)
 
   suit_hv_raw <- .rrm_duckdb_best_expr(suit_9[1], suit_9[2], suit_9[3])
   cap_hv_raw <- .rrm_duckdb_best_expr(cap_9[1], cap_9[2], cap_9[3])
-  suit_wa_raw <- .rrm_duckdb_weighted_avg_expr(suit_0, "")
-  cap_wa_raw <- .rrm_duckdb_weighted_avg_expr(cap_0, "")
+  suit_wa_rsi_raw <- .rrm_duckdb_weighted_avg_expr(suit_rsi_base, "")
+  cap_wa_rsi_raw <- .rrm_duckdb_weighted_avg_expr(cap_rsi_base, "")
+  suit_wa_rsi <- sprintf(
+    "CASE WHEN (%s) IS NULL THEN NULL ELSE (%s) END",
+    suit_rsi_base[1],
+    suit_wa_rsi_raw
+  )
+  cap_wa_rsi <- sprintf(
+    "CASE WHEN (%s) IS NULL THEN NULL ELSE (%s) END",
+    cap_rsi_base[1],
+    cap_wa_rsi_raw
+  )
 
   c(
     sprintf(
@@ -217,18 +275,26 @@
       1:3
     ),
     sprintf(
+      "CASE WHEN j.SDEC_%d = 0 THEN NULL ELSE (%s) END AS %s_SU_%d",
+      1:3,
+      suit_rsi_base,
+      rsi_var,
+      1:3
+    ),
+    sprintf(
       "CASE WHEN (%s) > 8 THEN NULL ELSE (%s) END AS %s_SU_HV",
       suit_hv_raw,
       suit_hv_raw,
       rating_var
     ),
     sprintf(
-      paste0(
-        "CASE WHEN (%1$s) IS NULL OR (%1$s) > 6 OR (%1$s) = 0 OR (%2$s) = 0 ",
-        "THEN NULL ELSE (%1$s) END AS %3$s_SU_WA"
-      ),
-      suit_wa_raw,
-      suit_0[1],
+      "(%s) AS %s_SU_WA",
+      suit_wa_rsi,
+      rsi_var
+    ),
+    sprintf(
+      "(%s) AS %s_SU_WA",
+      .rrm_duckdb_value_to_rating_expr(suit_wa_rsi),
       rating_var
     ),
     sprintf(
@@ -239,18 +305,26 @@
       1:3
     ),
     sprintf(
+      "CASE WHEN j.SDEC_%d = 0 THEN NULL ELSE (%s) END AS %s_%d",
+      1:3,
+      cap_rsi_base,
+      cap_rsi_var,
+      1:3
+    ),
+    sprintf(
       "CASE WHEN (%s) > 8 THEN NULL ELSE (%s) END AS %s_HV",
       cap_hv_raw,
       cap_hv_raw,
       cap_var
     ),
     sprintf(
-      paste0(
-        "CASE WHEN (%1$s) IS NULL OR (%1$s) > 6 OR (%2$s) = 0 ",
-        "THEN NULL ELSE (%1$s) END AS %3$s_WA"
-      ),
-      cap_wa_raw,
-      cap_0[1],
+      "(%s) AS %s_WA",
+      cap_wa_rsi,
+      cap_rsi_var
+    ),
+    sprintf(
+      "(%s) AS %s_WA",
+      .rrm_duckdb_value_to_rating_expr(cap_wa_rsi),
       cap_var
     )
   )
@@ -308,8 +382,12 @@ merge_rrm_on_vri_duckdb <- function(conn,
   rrm_prepped <- format_rrm_dt(rrm_dt = rrm_prepped, animal = animal)
   rrm_prepped <- calc_capability_rating(rrm_dt = rrm_prepped, animal = animal)
   rating_variables <- grep("_6C$", names(rrm_prepped), value = TRUE)
+  rsi_variables <- sub("_6C$", "_RSI", rating_variables)
   if (length(rating_variables) == 0L) {
     stop("rrm_dt must contain at least one '*_6C' rating column", call. = FALSE)
+  }
+  if (!all(rsi_variables %in% names(rrm_prepped))) {
+    stop("rrm_dt must contain matching '*_RSI' columns for each '*_6C' rating column", call. = FALSE)
   }
   if (!"Hectares" %in% names(rrm_prepped)) {
     stop("rrm_dt must contain a Hectares column", call. = FALSE)
@@ -332,14 +410,20 @@ merge_rrm_on_vri_duckdb <- function(conn,
     )
 
     for (rating_var in rating_variables) {
+      rsi_var <- sub("_6C$", "_RSI", rating_var)
       suit_alias <- sprintf("%s_RAW_%d", rating_var, decile)
+      suit_rsi_alias <- sprintf("%s_RAW_%d", rsi_var, decile)
       cap_var <- paste0(rating_var, "_CAP")
+      cap_rsi_var <- paste0(rsi_var, "_CAP")
       cap_alias <- sprintf("%s_RAW_%d", cap_var, decile)
-      raw_metric_aliases <- c(raw_metric_aliases, suit_alias, cap_alias)
+      cap_rsi_alias <- sprintf("%s_RAW_%d", cap_rsi_var, decile)
+      raw_metric_aliases <- c(raw_metric_aliases, suit_alias, suit_rsi_alias, cap_alias, cap_rsi_alias)
       join_metric_selects <- c(
         join_metric_selects,
         sprintf("r%d.%s AS %s", decile, rating_var, suit_alias),
-        sprintf("r%d.%s AS %s", decile, cap_var, cap_alias)
+        sprintf("r%d.%s AS %s", decile, rsi_var, suit_rsi_alias),
+        sprintf("r%d.%s AS %s", decile, cap_var, cap_alias),
+        sprintf("r%d.%s AS %s", decile, cap_rsi_var, cap_rsi_alias)
       )
     }
   }
@@ -357,13 +441,19 @@ merge_rrm_on_vri_duckdb <- function(conn,
   output_cols <- c(
     "rrm_merge_ind",
     unlist(lapply(rating_variables, function(rating_var) {
+      rsi_var <- sub("_6C$", "_RSI", rating_var)
       cap_var <- paste0(rating_var, "_CAP")
+      cap_rsi_var <- paste0(rsi_var, "_CAP")
       c(
         sprintf("%s_SU_%d", rating_var, 1:3),
+        sprintf("%s_SU_%d", rsi_var, 1:3),
         sprintf("%s_SU_HV", rating_var),
+        sprintf("%s_SU_WA", rsi_var),
         sprintf("%s_SU_WA", rating_var),
         sprintf("%s_%d", cap_var, 1:3),
+        sprintf("%s_%d", cap_rsi_var, 1:3),
         sprintf("%s_HV", cap_var),
+        sprintf("%s_WA", cap_rsi_var),
         sprintf("%s_WA", cap_var)
       )
     }), use.names = FALSE)
