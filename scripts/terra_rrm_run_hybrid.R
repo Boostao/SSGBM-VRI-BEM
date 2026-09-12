@@ -106,6 +106,10 @@ dir.create(output_dir,      recursive = TRUE, showWarnings = FALSE)
 dir.create(duckdb_temp_dir, recursive = TRUE, showWarnings = FALSE)
 
 elevation_raster <- normalizePath(elevation_raster, winslash = "/", mustWork = TRUE)
+reference_crs_wkt <- terra::crs(terra::rast(elevation_raster), proj = TRUE)
+if (is.na(reference_crs_wkt) || !nzchar(reference_crs_wkt)) {
+  stop("Reference elevation raster has no CRS; cannot export VRIBEM with a defined projection.", call. = FALSE)
+}
 reference_resolution_m <- max(terra::res(terra::rast(elevation_raster)))
 river_buffer_m <- river_buffer_cells * reference_resolution_m
 lake_buffer_m  <- lake_buffer_cells * reference_resolution_m
@@ -294,6 +298,8 @@ vribem_sf <- sf::st_sf(
   vribem_wkb[, setdiff(names(vribem_wkb), "wkb")],
   geometry = sf::st_as_sfc(vribem_wkb$wkb)
 )
+
+vribem_sf <- sf::st_set_crs(vribem_sf, reference_crs_wkt)
 
 # Temporary test fallback: ensure HARVESTYR exists for rasterization inputs.
 if (!"HARVESTYR" %in% names(vribem_sf)) {
@@ -530,7 +536,6 @@ step_unique_eco <- terra_rrm_merge_unique_ecosystem_fields(
   filename           = file.path(output_dir, "T11_unique_ecosystem.tif"),
   overwrite          = TRUE
 )
-
 
 # T12 — Crown area dominant values -----------------------------------------
 # No intermediate write: shallow DAG, final output written directly.

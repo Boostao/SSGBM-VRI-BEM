@@ -75,7 +75,10 @@ test_that("terra_rrm_correct_small_lakes classifies rasterized lake patches", {
   levels(stack[["BCLCS_LV_2"]]) <- data.frame(value = c(2L, 9L), label = c("W", "X"))
   levels(stack[["BCLCS_LV_5"]]) <- data.frame(value = c(2L, 9L), label = c("LA", "X"))
 
-  result <- terra_rrm_correct_small_lakes(stack)
+  expect_warning(
+    result <- terra_rrm_correct_small_lakes(stack),
+    NA
+  )
   raster_conv <- .terra_rrm_get_raster_conv()
 
   ow_code <- .terra_rrm_layer_codes(result, "BEUMC_S1", "OW", raster_conv$bem, strict = FALSE)[[1]]
@@ -145,6 +148,53 @@ test_that("terra_rrm_correct_small_lakes can expand corrections around lake pixe
   expect_true(all(is.na(as.vector(terra::values(result[["SPEC_CD_1"]])))))
 })
 
+test_that("terra_rrm_correct_small_lakes writes without category warnings", {
+  skip_if_not_installed("terra")
+
+  make_raster <- function(name, values, ymax = 100) {
+    raster <- terra::rast(nrows = 1, ncols = length(values), xmin = 0, xmax = length(values) * 1000, ymin = 0, ymax = ymax, crs = "EPSG:3005")
+    terra::values(raster) <- values
+    names(raster) <- name
+    raster
+  }
+
+  stack <- c(
+    make_raster("lakes", c(0L, 1L, 0L)),
+    make_raster("BEUMC_S1", rep(1L, 3)),
+    make_raster("BEUMC_S2", rep(9L, 3)),
+    make_raster("BEUMC_S3", rep(8L, 3)),
+    make_raster("SDEC_1", rep(4L, 3)),
+    make_raster("SDEC_2", rep(3L, 3)),
+    make_raster("SDEC_3", rep(3L, 3)),
+    make_raster("BCLCS_LV_1", rep(9L, 3)),
+    make_raster("BCLCS_LV_2", rep(9L, 3)),
+    make_raster("BCLCS_LV_3", rep(9L, 3)),
+    make_raster("BCLCS_LV_4", rep(9L, 3)),
+    make_raster("BCLCS_LV_5", rep(9L, 3)),
+    make_raster("SPEC_CD_1", rep(5L, 3)),
+    make_raster("SPEC_PCT_1", rep(80L, 3))
+  )
+
+  levels(stack[["BEUMC_S1"]]) <- data.frame(value = c(1L, 2L, 3L, 4L), label = c("XX", "OW", "LS", "LL"))
+  levels(stack[["BEUMC_S2"]]) <- data.frame(value = c(1L, 8L, 9L), label = c("XX", "YY", "ZZ"))
+  levels(stack[["BEUMC_S3"]]) <- data.frame(value = c(1L, 8L, 9L), label = c("XX", "YY", "ZZ"))
+  levels(stack[["BCLCS_LV_1"]]) <- data.frame(value = c(1L, 9L), label = c("N", "X"))
+  levels(stack[["BCLCS_LV_2"]]) <- data.frame(value = c(2L, 9L), label = c("W", "X"))
+  levels(stack[["BCLCS_LV_5"]]) <- data.frame(value = c(2L, 9L), label = c("LA", "X"))
+
+  filename <- tempfile(fileext = ".tif")
+  expect_warning(
+    result <- terra_rrm_correct_small_lakes(stack, buffer_m = 1000, filename = filename, overwrite = TRUE),
+    NA
+  )
+
+  raster_conv <- .terra_rrm_get_raster_conv()
+  ow_code <- .terra_rrm_layer_codes(result, "BEUMC_S1", "OW", raster_conv$bem, strict = FALSE)[[1]]
+  expect_equal(as.vector(terra::values(result[["BEUMC_S1"]])), c(ow_code, ow_code, ow_code))
+  expect_equal(.terra_rrm_layer_codes(result, "BEUMC_S1", "OW", raster_conv$bem, strict = FALSE)[[1]], ow_code)
+  expect_equal(.terra_rrm_layer_codes(result, "BCLCS_LV_1", "N", raster_conv$vri, strict = FALSE)[[1]], .terra_rrm_layer_codes(stack, "BCLCS_LV_1", "N", raster_conv$vri, strict = FALSE)[[1]])
+})
+
 test_that("terra_rrm_correct_bem_from_wetlands applies primary WL add/remove transitions", {
   skip_if_not_installed("terra")
 
@@ -195,7 +245,10 @@ test_that("terra_rrm_correct_bem_from_wetlands applies primary WL add/remove tra
   levels(stack[["GROUP_3"]]) <- data.frame(value = c(1L, 2L), label = c("X", "W"))
   levels(stack[["KIND_3"]]) <- data.frame(value = c(1L, 2L), label = c("X", "U"))
 
-  result <- terra_rrm_correct_bem_from_wetlands(stack, buc = buc)
+  expect_warning(
+    result <- terra_rrm_correct_bem_from_wetlands(stack, buc = buc),
+    NA
+  )
   raster_conv <- .terra_rrm_get_raster_conv()
 
   expect_equal(as.vector(terra::values(result[["BEUMC_S1"]])), c(2, 2, 1, 2))

@@ -450,8 +450,47 @@ terra_rrm_add_ecosystem_keys <- function(x,
     return(result)
   }
 
-  terra::writeRaster(result, filename = filename, overwrite = overwrite)
-  terra::rast(filename)
+  layer_levels <- lapply(names(result), function(layer_name) {
+    categories <- terra::cats(result[[layer_name]])[[1]]
+    if (is.null(categories) || ncol(categories) < 2L) {
+      return(NULL)
+    }
+
+    data.frame(
+      value = categories[[1]],
+      label = as.character(categories[[2]]),
+      stringsAsFactors = FALSE
+    )
+  })
+  names(layer_levels) <- names(result)
+
+  result <- suppressWarnings({
+    write_result <- result
+    for (layer_name in names(write_result)) {
+      levels(write_result[[layer_name]]) <- NULL
+      if (any(terra::values(write_result[[layer_name]]) < 0, na.rm = TRUE)) {
+        write_result[[layer_name]] <- terra::ifel(write_result[[layer_name]] < 0, NA, write_result[[layer_name]])
+        names(write_result[[layer_name]]) <- layer_name
+      }
+    }
+
+    terra::writeRaster(
+      write_result,
+      filename = filename,
+      overwrite = overwrite,
+      wopt = list(datatype = "INT4S")
+    )
+
+    result <- terra::rast(filename)
+    for (layer_name in names(layer_levels)) {
+      if (!is.null(layer_levels[[layer_name]]) && layer_name %in% names(result)) {
+        levels(result[[layer_name]]) <- layer_levels[[layer_name]]
+        names(result[[layer_name]]) <- layer_name
+      }
+    }
+    result
+  })
+  result
 }
 
 
@@ -1103,6 +1142,42 @@ terra_rrm_merge_unique_ecosystem_fields <- function(x,
     return(result)
   }
 
-  terra::writeRaster(result, filename = filename, overwrite = overwrite)
-  terra::rast(filename)
+  layer_levels <- lapply(names(result), function(layer_name) {
+    categories <- terra::cats(result[[layer_name]])[[1]]
+    if (is.null(categories) || ncol(categories) < 2L) {
+      return(NULL)
+    }
+
+    data.frame(
+      value = categories[[1]],
+      label = as.character(categories[[2]]),
+      stringsAsFactors = FALSE
+    )
+  })
+  names(layer_levels) <- names(result)
+
+  write_result <- result
+  for (layer_name in names(write_result)) {
+    levels(write_result[[layer_name]]) <- NULL
+    if (any(terra::values(write_result[[layer_name]]) < 0, na.rm = TRUE)) {
+      write_result[[layer_name]] <- terra::ifel(write_result[[layer_name]] < 0, NA, write_result[[layer_name]])
+      names(write_result[[layer_name]]) <- layer_name
+    }
+  }
+
+  terra::writeRaster(
+    write_result,
+    filename = filename,
+    overwrite = overwrite,
+    wopt = list(datatype = "INT4S")
+  )
+
+  result <- terra::rast(filename)
+  for (layer_name in names(layer_levels)) {
+    if (!is.null(layer_levels[[layer_name]]) && layer_name %in% names(result)) {
+      levels(result[[layer_name]]) <- layer_levels[[layer_name]]
+      names(result[[layer_name]]) <- layer_name
+    }
+  }
+  result
 }

@@ -42,7 +42,12 @@ run_hybrid_moose_only <- function(
   dir.create(duckdb_temp_dir, recursive = TRUE, showWarnings = FALSE)
 
   elevation_raster <- normalizePath(elevation_raster, winslash = "/", mustWork = TRUE)
-  reference_resolution_m <- max(terra::res(terra::rast(elevation_raster)))
+  reference_raster <- terra::rast(elevation_raster)
+  reference_resolution_m <- max(terra::res(reference_raster))
+  reference_crs_wkt <- terra::crs(reference_raster, proj = TRUE)
+  if (is.na(reference_crs_wkt) || !nzchar(reference_crs_wkt)) {
+    stop("Reference elevation raster has no CRS; cannot export VRIBEM with a defined projection.", call. = FALSE)
+  }
   river_buffer_m <- river_buffer_cells * reference_resolution_m
   lake_buffer_m  <- lake_buffer_cells * reference_resolution_m
   stopifnot(file.exists(rules_xl))
@@ -167,6 +172,7 @@ run_hybrid_moose_only <- function(
     vribem_wkb[, setdiff(names(vribem_wkb), "wkb")],
     geometry = sf::st_as_sfc(vribem_wkb$wkb)
   )
+  vribem_sf <- sf::st_set_crs(vribem_sf, reference_crs_wkt)
 
   if (!"HARVESTYR" %in% names(vribem_sf)) {
     message("[D06] HARVESTYR missing; mocking HARVESTYR = 2012 for testing")

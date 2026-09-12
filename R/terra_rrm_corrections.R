@@ -31,6 +31,34 @@
   lookup_env$raster_conv
 }
 
+set_raster_levels_from_conv <- function(x, factor_conv_list) {
+  stopifnot(inherits(x, "SpatRaster"))
+  stopifnot(is.list(factor_conv_list))
+
+  matching_layers <- intersect(names(x), names(factor_conv_list))
+  if (length(matching_layers) == 0L) {
+    return(x)
+  }
+
+  for (layer_name in matching_layers) {
+    lookup_dt <- factor_conv_list[[layer_name]]
+    if (is.null(lookup_dt) || nrow(lookup_dt) == 0L) {
+      next
+    }
+
+    labels <- as.character(lookup_dt[["value"]])
+    labels[is.na(labels)] <- ""
+
+    levels(x[[layer_name]]) <- data.frame(
+      value = lookup_dt[["factor"]],
+      label = labels,
+      stringsAsFactors = FALSE
+    )
+  }
+
+  x
+}
+
 .terra_rrm_layer_codes <- function(x, layer_name, labels, factor_conv_list = NULL, strict = TRUE) {
   stopifnot(inherits(x, "SpatRaster"))
   stopifnot(layer_name %in% names(x))
@@ -98,8 +126,17 @@
     return(x)
   }
 
-  replacement <- terra::ifel(mask[[1]], value, x[[layer_name]])
+  target <- x[[layer_name]]
+  target_categories <- terra::cats(target)[[1]]
+  if (!is.null(target_categories) && ncol(target_categories) >= 2L) {
+    levels(target) <- NULL
+  }
+
+  replacement <- terra::ifel(mask[[1]], value, target)
   names(replacement) <- layer_name
+  if (!is.null(target_categories) && ncol(target_categories) >= 2L) {
+    levels(replacement) <- target_categories
+  }
   x[[layer_name]] <- replacement
   x
 }
@@ -110,8 +147,23 @@
     return(x)
   }
 
-  replacement <- terra::ifel(mask[[1]] == 1, values, x[[layer_name]])
+  target <- x[[layer_name]]
+  target_categories <- terra::cats(target)[[1]]
+  if (!is.null(target_categories) && ncol(target_categories) >= 2L) {
+    levels(target) <- NULL
+  }
+
+  values_layer <- values
+  values_categories <- terra::cats(values_layer)[[1]]
+  if (!is.null(values_categories) && ncol(values_categories) >= 2L) {
+    levels(values_layer) <- NULL
+  }
+
+  replacement <- terra::ifel(mask[[1]] == 1, values_layer, target)
   names(replacement) <- layer_name
+  if (!is.null(target_categories) && ncol(target_categories) >= 2L) {
+    levels(replacement) <- target_categories
+  }
   x[[layer_name]] <- replacement
   x
 }
@@ -403,8 +455,14 @@
     return(result)
   }
 
-  terra::writeRaster(result, filename = filename, overwrite = overwrite)
-  terra::rast(filename)
+  write_result <- result
+  for (layer_name in names(write_result)) {
+    levels(write_result[[layer_name]]) <- NULL
+  }
+
+  terra::writeRaster(write_result, filename = filename, overwrite = overwrite)
+  result <- terra::rast(filename)
+  set_raster_levels_from_conv(result, c(raster_conv$vri, raster_conv$bem))
 }
 
 
@@ -545,8 +603,14 @@ terra_rrm_apply_rules <- function(x,
     return(result)
   }
 
-  terra::writeRaster(result, filename = filename, overwrite = overwrite)
-  terra::rast(filename)
+  write_result <- result
+  for (layer_name in names(write_result)) {
+    levels(write_result[[layer_name]]) <- NULL
+  }
+
+  terra::writeRaster(write_result, filename = filename, overwrite = overwrite)
+  result <- terra::rast(filename)
+  set_raster_levels_from_conv(result, c(raster_conv$vri, raster_conv$bem))
 }
 
 
@@ -829,8 +893,14 @@ terra_rrm_correct_bem_from_wetlands <- function(x,
     return(result)
   }
 
-  terra::writeRaster(result, filename = filename, overwrite = overwrite)
-  terra::rast(filename)
+  write_result <- result
+  for (layer_name in names(write_result)) {
+    levels(write_result[[layer_name]]) <- NULL
+  }
+
+  terra::writeRaster(write_result, filename = filename, overwrite = overwrite)
+  result <- terra::rast(filename)
+  set_raster_levels_from_conv(result, c(raster_conv$vri, raster_conv$bem))
 }
 
 
@@ -899,8 +969,14 @@ terra_rrm_correct_bem_from_wetlands_riparian_stage <- function(x,
     return(result)
   }
 
-  terra::writeRaster(result, filename = filename, overwrite = overwrite)
-  terra::rast(filename)
+  write_result <- result
+  for (layer_name in names(write_result)) {
+    levels(write_result[[layer_name]]) <- NULL
+  }
+
+  terra::writeRaster(write_result, filename = filename, overwrite = overwrite)
+  result <- terra::rast(filename)
+  set_raster_levels_from_conv(result, c(raster_conv$vri, raster_conv$bem))
 }
 
 
@@ -1202,8 +1278,14 @@ terra_rrm_correct_small_lakes <- function(x,
     return(result)
   }
 
-  terra::writeRaster(result, filename = filename, overwrite = overwrite)
-  terra::rast(filename)
+  write_result <- result
+  for (layer_name in names(write_result)) {
+    levels(write_result[[layer_name]]) <- NULL
+  }
+
+  terra::writeRaster(write_result, filename = filename, overwrite = overwrite)
+  result <- terra::rast(filename)
+  set_raster_levels_from_conv(result, c(raster_conv$vri, raster_conv$bem))
 }
 
 
@@ -1787,13 +1869,31 @@ terra_rrm_correct_bem_from_vri <- function(x,
       }
 
       source_layer <- source_layers[[i]]
-      replacement <- if (is.na(source_layer) || !source_layer %in% names(x)) {
-        terra::ifel(mask_layer == 1, NA, result[[target_layer]])
+      target <- result[[target_layer]]
+      target_categories <- terra::cats(target)[[1]]
+      if (!is.null(target_categories) && ncol(target_categories) >= 2L) {
+        levels(target) <- NULL
+      }
+
+      replacement_source <- NULL
+      if (!is.na(source_layer) && source_layer %in% names(x)) {
+        replacement_source <- x[[source_layer]]
+        source_categories <- terra::cats(replacement_source)[[1]]
+        if (!is.null(source_categories) && ncol(source_categories) >= 2L) {
+          levels(replacement_source) <- NULL
+        }
+      }
+
+      replacement <- if (is.null(replacement_source)) {
+        terra::ifel(mask_layer == 1, NA, target)
       } else {
-        terra::ifel(mask_layer == 1, x[[source_layer]], result[[target_layer]])
+        terra::ifel(mask_layer == 1, replacement_source, target)
       }
 
       names(replacement) <- target_layer
+      if (!is.null(target_categories) && ncol(target_categories) >= 2L) {
+        levels(replacement) <- target_categories
+      }
       result[[target_layer]] <- replacement
     }
   }
