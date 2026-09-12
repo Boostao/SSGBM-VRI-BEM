@@ -30,7 +30,7 @@ amend_large_polygons_duckdb(conn,
                             result_tbl   = "VRIBEM")
 
 # 1b ----
-duckdb::duckdb_read_csv(conn, "beu_bec_corr",  "inst/csv/Allowed_BEC_BEUs_NE_ALL.csv", temporary = TRUE) #TODO update tu use system.file on package csv
+duckdb::duckdb_read_csv(conn, "beu_bec_corr",  "inst/csv/Allowed_BEC_BEUs_NE_ALL.csv", temporary = TRUE) #TODO update to use system.file on package csv
 
 vribem_corrections_view(conn, vri_bem_tbl = "VRIBEM", beu_bec = "beu_bec_corr")
 

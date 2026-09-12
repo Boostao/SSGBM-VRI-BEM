@@ -5,3 +5,4 @@
 data-raw/BCDATA
 *.tif
 duckdb_tmp/
+.posit/

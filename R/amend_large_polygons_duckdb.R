@@ -310,6 +310,7 @@ amend_large_polygons_duckdb <- function(conn,
   DBI::dbExecute(conn, sprintf(
     "CREATE OR REPLACE TABLE %s AS
      SELECT
+       row_number() OVER () AS xl_id,
        INVENTORY_STANDARD_CD, BCLCS_LV_1, BCLCS_LV_2, BCLCS_LV_3, BCLCS_LV_4, BCLCS_LV_5,
        SPEC_CD_1, BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE,
        ST_CollectionExtract(ST_MakeValid(Shape), 3) AS Shape
@@ -355,7 +356,7 @@ amend_large_polygons_duckdb <- function(conn,
   # V_BEM RTREE is built just before step 9 where it is first needed.
 
   xl_rowids <- DBI::dbGetQuery(conn, sprintf(
-    "SELECT rowid AS rid FROM %s ORDER BY rowid", tmp_vrixl
+    "SELECT xl_id AS rid FROM %s ORDER BY xl_id", tmp_vrixl
   ))$rid
 
   # Build a spatial tile grid over all XL polygons.
@@ -371,13 +372,13 @@ amend_large_polygons_duckdb <- function(conn,
   .tile_sz      <- 10000  # 10 km in BC Albers metres
   .xl_bounds    <- tryCatch(
     DBI::dbGetQuery(conn, sprintf(
-      "SELECT rowid AS rid,
+      "SELECT xl_id AS rid,
               ST_XMin(Shape) AS xmin,
               ST_YMin(Shape) AS ymin,
               ST_XMax(Shape) AS xmax,
               ST_YMax(Shape) AS ymax
        FROM %s
-       ORDER BY rowid",
+       ORDER BY xl_id",
       tmp_vrixl
     )),
     error = function(e) {
@@ -540,7 +541,7 @@ amend_large_polygons_duckdb <- function(conn,
       DBI::dbExecute(conn, sprintf(
         "INSERT INTO %s
          SELECT
-           xl.rowid AS xl_rowid,
+           xl.xl_id AS xl_rowid,
            xl.INVENTORY_STANDARD_CD,
            'N'  AS BCLCS_LV_1,
            'L'  AS BCLCS_LV_2,
@@ -555,11 +556,11 @@ amend_large_polygons_duckdb <- function(conn,
              g.Shape
            )), 3) AS Shape
          FROM (
-           SELECT rowid, INVENTORY_STANDARD_CD, BCLCS_LV_1, BCLCS_LV_2, BCLCS_LV_3,
+           SELECT xl_id, INVENTORY_STANDARD_CD, BCLCS_LV_1, BCLCS_LV_2, BCLCS_LV_3,
                   BCLCS_LV_4, BCLCS_LV_5, SPEC_CD_1, BGC_ZONE, BGC_SUBZON,
                   BGC_VRT, BGC_PHASE, Shape
            FROM %s
-           WHERE rowid = %.0f
+           WHERE xl_id = %.0f
          ) xl
          JOIN %s g ON ST_Intersects(xl.Shape, g.Shape)
                    AND ST_Intersects(g.Shape, ST_MakeEnvelope(%.0f, %.0f, %.0f, %.0f))
@@ -594,7 +595,7 @@ amend_large_polygons_duckdb <- function(conn,
       DBI::dbExecute(conn, sprintf(
         "INSERT INTO %s
          SELECT
-           xl.rowid AS xl_rowid,
+           xl.xl_id AS xl_rowid,
            xl.INVENTORY_STANDARD_CD,
            'N'  AS BCLCS_LV_1,
            'W'  AS BCLCS_LV_2,
@@ -609,11 +610,11 @@ amend_large_polygons_duckdb <- function(conn,
              l.Shape
            )), 3) AS Shape
          FROM (
-           SELECT rowid, INVENTORY_STANDARD_CD, BCLCS_LV_1, BCLCS_LV_2, BCLCS_LV_3,
+           SELECT xl_id, INVENTORY_STANDARD_CD, BCLCS_LV_1, BCLCS_LV_2, BCLCS_LV_3,
                   BCLCS_LV_4, BCLCS_LV_5, SPEC_CD_1, BGC_ZONE, BGC_SUBZON,
                   BGC_VRT, BGC_PHASE, Shape
            FROM %s
-           WHERE rowid = %.0f
+           WHERE xl_id = %.0f
          ) xl
          JOIN %s l ON ST_Intersects(xl.Shape, l.Shape)
                    AND ST_Intersects(l.Shape, ST_MakeEnvelope(%.0f, %.0f, %.0f, %.0f))
@@ -648,7 +649,7 @@ amend_large_polygons_duckdb <- function(conn,
       DBI::dbExecute(conn, sprintf(
         "INSERT INTO %s
          SELECT
-           xl.rowid AS xl_rowid,
+           xl.xl_id AS xl_rowid,
            xl.INVENTORY_STANDARD_CD,
            'V'  AS BCLCS_LV_1,
            'N'  AS BCLCS_LV_2,
@@ -663,11 +664,11 @@ amend_large_polygons_duckdb <- function(conn,
              w.Shape
            )), 3) AS Shape
          FROM (
-           SELECT rowid, INVENTORY_STANDARD_CD, BCLCS_LV_1, BCLCS_LV_2, BCLCS_LV_3,
+           SELECT xl_id, INVENTORY_STANDARD_CD, BCLCS_LV_1, BCLCS_LV_2, BCLCS_LV_3,
                   BCLCS_LV_4, BCLCS_LV_5, SPEC_CD_1, BGC_ZONE, BGC_SUBZON,
                   BGC_VRT, BGC_PHASE, Shape
            FROM %s
-           WHERE rowid = %.0f
+           WHERE xl_id = %.0f
          ) xl
          JOIN %s w ON ST_Intersects(xl.Shape, w.Shape)
                    AND ST_Intersects(w.Shape, ST_MakeEnvelope(%.0f, %.0f, %.0f, %.0f))
@@ -743,8 +744,8 @@ amend_large_polygons_duckdb <- function(conn,
          FROM %s
          WHERE xl_rowid = %s
          GROUP BY xl_rowid
-       ) ov ON xl.rowid = ov.xl_rowid
-       WHERE xl.rowid = %s
+       ) ov ON xl.xl_id = ov.xl_rowid
+       WHERE xl.xl_id = %s
          AND CASE
            WHEN ov.overlay_geom IS NULL THEN ST_Area(xl.Shape)
            ELSE ST_Area(ST_CollectionExtract(ST_MakeValid(ST_Difference(xl.Shape, ov.overlay_geom)), 3))
