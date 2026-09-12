@@ -2,7 +2,7 @@
 % Please edit documentation in R/merge_elevation_raster_on_sf.R
 \name{merge_elevation_raster_on_sf}
 \alias{merge_elevation_raster_on_sf}
-\title{Compute slope and aspect from elevation and their mean by polygon}
+	itle{Compute slope, aspect, and terrain roughness from elevation by polygon}
 \usage{
 merge_elevation_raster_on_sf(
   elev_raster,
@@ -18,17 +18,22 @@ merge_elevation_raster_on_sf(
 
 \item{elevation_threshold}{numeric elevation threshold used to create above elevation indicator (\code{ABOVE_ELEV_THOLD})}
 
-\item{terrain_raster}{SpatRaster that contains slope and aspect computed in radiants}
+\item{terrain_raster}{Optional SpatRaster that contains \code{slope} and \code{aspect}
+computed in radians. If \code{TRI} is absent it is derived from \code{elev_raster}
+automatically.}
 }
 \value{
-VRI-BEM augmented of the following variables : MEAN_ASP, MEAN_SLOPE, SLOPE_MOD and ABOVE_ELEV_THOLD.
+VRI-BEM augmented of the following variables: \code{MEAN_ASP},
+\code{MEAN_SLOPE}, \code{MEAN_TRI}, \code{SLOPE_MOD}, and \code{ABOVE_ELEV_THOLD}.
 }
 \description{
-This function overlays the user-specified polygon feature class with slope and aspect raster to
-add mean aspect, mean slope and slope modifiers to the polygon attributes
+This function overlays the user-specified polygon feature class with terrain
+rasters derived from elevation to add mean aspect, mean slope, mean terrain
+roughness index, and slope modifiers to the polygon attributes.
 }
 \details{
-Aspect and slope are calculated by extracting the information from the elevation raster.
+Aspect, slope, and terrain roughness index are calculated by extracting the
+information from terrain rasters derived from the elevation raster.
 
 Based on whether the the elevation is above the selected threshold then ABOLVE_ELEV_THOLD is created with either "Y" or "N".
 

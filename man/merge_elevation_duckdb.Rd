@@ -2,7 +2,7 @@
 % Please edit documentation in R/merge_elevation_duckdb.R
 \name{merge_elevation_duckdb}
 \alias{merge_elevation_duckdb}
-\title{Compute slope, aspect, elevation and their derivatives inside DuckDB}
+	itle{Compute slope, aspect, elevation, and terrain roughness inside DuckDB}
 \usage{
 merge_elevation_duckdb(
   conn,
@@ -26,8 +26,9 @@ column and the fields \code{BEUMC_S1}, \code{BEUMC_S2}, \code{BEUMC_S3} and \cod
 \code{ABOVE_ELEV_THOLD} is set to \code{"Y"}. Default \code{1500}.}
 
 \item{terrain_raster}{Optional \code{SpatRaster} with layers \code{slope} and
-\code{aspect} expressed in \strong{radians}.  When \code{NULL} (default) the terrain
-raster is derived from \code{elev_raster} via \code{\link[terra:terrain]{terra::terrain()}}.}
+\code{aspect} expressed in \strong{radians}. If \code{TRI} is absent it is derived from
+\code{elev_raster} automatically. When \code{NULL} (default) the terrain raster is
+derived from \code{elev_raster} via \code{\link[terra:terrain]{terra::terrain()}}.}
 
 \item{result_tbl}{Character. Name given to the (temp) table written to
 \code{conn} that will hold the final result including the new columns.

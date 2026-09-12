@@ -1,6 +1,6 @@
  There is some data that I still need to put together for you for some of the below steps.
 
-- [ ] Add a Terrain Roughness Index aggregate to polygons
+- [x] Add a Terrain Roughness Index aggregate to polygons
     - This should be fairly straightforward, using the DEM we typically use for slope, aspect, and elevation
 - [ ] Update the SkWERM Resource Ratings Models to output Resource Suitability Index values for each ecosystem, including weighted average and highest value for each polygon, in addition to Wildlife Habitat Ratings
     - When assigning RRM values back to the spatial data set (merge_rrm_on_vri), we currently only keep the rating values (ending in _6C)

@@ -26,6 +26,7 @@ make_test_conn <- function() {
 make_uniform_raster <- function(elev_val = 1600,
                                 slope_val_deg = 30,
                                 aspect_val_deg = 90,
+                                tri_val = 7,
                                 slope_val_rad = NULL) {
 
   # 10x10 cells, 10 m each, origin at (500000, 5000000)
@@ -41,10 +42,11 @@ make_uniform_raster <- function(elev_val = 1600,
 
   r_slope  <- terra::rast(r_elev); terra::values(r_slope)  <- slope_rad;  names(r_slope)  <- "slope"
   r_aspect <- terra::rast(r_elev); terra::values(r_aspect) <- aspect_rad; names(r_aspect) <- "aspect"
+  r_tri    <- terra::rast(r_elev); terra::values(r_tri)    <- tri_val;    names(r_tri)    <- "TRI"
 
   list(
     elev    = r_elev,
-    terrain = c(r_slope, r_aspect)
+    terrain = c(r_slope, r_aspect, r_tri)
   )
 }
 
@@ -95,6 +97,24 @@ run_and_fetch <- function(conn, tbl_name, rasters,
   DBI::dbGetQuery(conn, sprintf("SELECT * EXCLUDE (Shape) FROM %s", result_tbl))
 }
 
+make_test_sf <- function(beumc_s1 = "AT",
+                         beumc_s2 = NA_character_,
+                         beumc_s3 = NA_character_,
+                         bgc_zone = "SBS") {
+  poly <- sf::st_as_sfc(
+    "POLYGON ((500000 5000000, 500100 5000000, 500100 5000100, 500000 5000100, 500000 5000000))",
+    crs = 32610
+  )
+
+  sf::st_sf(
+    BEUMC_S1 = beumc_s1,
+    BEUMC_S2 = beumc_s2,
+    BEUMC_S3 = beumc_s3,
+    BGC_ZONE = bgc_zone,
+    geometry = poly
+  )
+}
+
 # ---------------------------------------------------------------------------
 # Tests: ABOVE_ELEV_THOLD
 # ---------------------------------------------------------------------------
@@ -130,6 +150,31 @@ test_that("ABOVE_ELEV_THOLD uses custom threshold correctly", {
 
   expect_equal(res$ABOVE_ELEV_THOLD, "N")
   DBI::dbDisconnect(conn, shutdown = TRUE)
+})
+
+test_that("merge_elevation_duckdb aggregates MEAN_TRI", {
+  conn    <- make_test_conn()
+  rasters <- make_uniform_raster(tri_val = 12.5)
+  make_test_table(conn, beumc_s1 = "AT", bgc_zone = "SBS")
+
+  res <- run_and_fetch(conn, "VRI_BEM_TEST", rasters)
+
+  expect_equal(res$MEAN_TRI, 12.5)
+  DBI::dbDisconnect(conn, shutdown = TRUE)
+})
+
+test_that("merge_elevation_raster_on_sf aggregates MEAN_TRI", {
+  rasters <- make_uniform_raster(tri_val = 12.5)
+  vri_bem <- make_test_sf()
+
+  res <- ssgbm::merge_elevation_raster_on_sf(
+    elev_raster = rasters$elev,
+    vri_bem = vri_bem,
+    terrain_raster = rasters$terrain,
+    elevation_threshold = 1500
+  )
+
+  expect_equal(res$MEAN_TRI, 12.5)
 })
 
 # ---------------------------------------------------------------------------

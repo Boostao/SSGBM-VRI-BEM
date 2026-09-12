@@ -1,4 +1,4 @@
-#' Compute slope, aspect, elevation and their derivatives inside DuckDB
+#' Compute slope, aspect, elevation, and terrain roughness inside DuckDB
 #'
 #' This is the DuckDB-optimised counterpart of [merge_elevation_raster_on_sf()].
 #' Raster cells are exported to temporary **Parquet files on disk** via
@@ -16,8 +16,9 @@
 #' @param elevation_threshold Numeric. Elevation (m) above which
 #'   `ABOVE_ELEV_THOLD` is set to `"Y"`. Default `1500`.
 #' @param terrain_raster Optional `SpatRaster` with layers `slope` and
-#'   `aspect` expressed in **radians**.  When `NULL` (default) the terrain
-#'   raster is derived from `elev_raster` via [terra::terrain()].
+#'   `aspect` expressed in **radians**. If `TRI` is absent it is derived from
+#'   `elev_raster` automatically. When `NULL` (default) the terrain raster is
+#'   derived from `elev_raster` via [terra::terrain()].
 #' @param result_tbl Character. Name given to the (temp) table written to
 #'   `conn` that will hold the final result including the new columns.
 #'   Defaults to `vri_bem_tbl`.
@@ -70,12 +71,10 @@ merge_elevation_duckdb <- function(conn,
   }, add = TRUE)
 
   # ------------------------------------------------------------------
-  # 1. Build terrain raster (slope + aspect in radians) ---------------
+  # 1. Build terrain raster (slope + aspect in radians, plus TRI) -----
   # ------------------------------------------------------------------
   t0 <- proc.time()[["elapsed"]]
-  if (is.null(terrain_raster)) {
-    terrain_raster <- terra::terrain(elev_raster, v = c("slope", "aspect"), unit = "radians")
-  }
+  terrain_raster <- prepare_terrain_raster(elev_raster = elev_raster, terrain_raster = terrain_raster)
   terrain_secs <- round(proc.time()[["elapsed"]] - t0, 1)
   logger::log_info(sprintf("merge_elevation_duckdb: terrain computed (%.1fs)", terrain_secs))
 
@@ -118,7 +117,7 @@ merge_elevation_duckdb <- function(conn,
   # ------------------------------------------------------------------
   t0 <- proc.time()[["elapsed"]]
   elev_col <- names(elev_raster)[1L]          # save before add() renames
-  terra::add(elev_raster) <- terrain_raster   # stack: elev, slope, aspect
+  terra::add(elev_raster) <- terrain_raster   # stack: elev, slope, aspect, TRI
 
   rasterize_batch_size <- getOption("ssgbm.merge_elevation_batch_size", 10000L)
   if (!is.numeric(rasterize_batch_size) || length(rasterize_batch_size) != 1L ||
@@ -190,12 +189,12 @@ merge_elevation_duckdb <- function(conn,
     rasterize_secs
   ))
 
-  # Stack row_id as 4th layer.  na.rm = TRUE drops cells not in any
+  # Stack row_id as 5th layer.  na.rm = TRUE drops cells not in any
   # polygon (row_id = NA) as well as raster no-data, so the Parquet
   # contains only cells inside polygons — smaller file, faster hash join.
   # Export is streamed block-by-block to avoid a full-raster allocation.
   t0 <- proc.time()[["elapsed"]]
-  terra::add(elev_raster) <- id_raster        # 4th layer: row_id
+  terra::add(elev_raster) <- id_raster        # 5th layer: row_id
   rm(id_raster, terrain_raster)
   terrain_dataset_dir <- tempfile(pattern = "merge_elevation_parquet_")
   dir.create(terrain_dataset_dir)
@@ -290,6 +289,7 @@ merge_elevation_duckdb <- function(conn,
         CAST(row_id AS INTEGER)                                           AS row_id,
         AVG(%s)                                                           AS ELEV,
         AVG(slope) * %.10f                                                AS MEAN_SLOPE,
+        AVG(TRI)                                                          AS MEAN_TRI,
         CASE
           WHEN SUM(CASE WHEN slope > 0 AND slope IS NOT NULL THEN 1 ELSE 0 END) = 0
             THEN NULL
@@ -313,6 +313,7 @@ merge_elevation_duckdb <- function(conn,
         src_row_id,
         s.ELEV,
         s.MEAN_SLOPE,
+        s.MEAN_TRI,
         s.MEAN_ASP
       FROM _elev_vri_tmp m
       LEFT JOIN stats s ON m.raster_row_id = s.row_id
@@ -322,14 +323,16 @@ merge_elevation_duckdb <- function(conn,
         v.*,
         m.ELEV,
         m.MEAN_SLOPE,
+        m.MEAN_TRI,
         m.MEAN_ASP
       FROM %s v
       LEFT JOIN mapstats m ON v.rowid = m.src_row_id
     )
     SELECT
-      * EXCLUDE (ELEV, MEAN_SLOPE, MEAN_ASP),
+      * EXCLUDE (ELEV, MEAN_SLOPE, MEAN_TRI, MEAN_ASP),
       ELEV,
       MEAN_SLOPE,
+      MEAN_TRI,
       MEAN_ASP,
       CASE
         WHEN ELEV > %s THEN 'Y'

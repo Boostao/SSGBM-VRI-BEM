@@ -85,11 +85,11 @@ create_RRM_ecosystem_from_scratch <- function(dsn, vri_dsn = dsn, bem_dsn = dsn,
 
   rules_dt <- setDT(readxl::read_excel(rules_xl, sheet = "Combined_Rules_for_Script"))
 
-  # compute slope and aspect only once before the loop
+  # compute slope, aspect, and TRI only once before the loop
   if (verbose) {
-    message("computing slope and aspect from elevation raster")
+    message("computing slope, aspect, and terrain roughness from elevation raster")
   }
-  terrain_raster <- terra::terrain(elevation, v = c("slope", "aspect"), unit = "radians")
+  terrain_raster <- terra::terrain(elevation, v = c("slope", "aspect", "TRI"), unit = "radians")
 
   # initialize empty list for RRM ecosystem which will be filled when iterating
   RRM_ecosystem_list <- list()
@@ -118,9 +118,9 @@ create_RRM_ecosystem_from_scratch <- function(dsn, vri_dsn = dsn, bem_dsn = dsn,
     vri_bem_intersection_dt <- vri_bem$intersection_dt
     vri_bem <- vri_bem$vri_bem
 
-    # merge elevation, slope and and aspect information
+    # merge elevation, slope, aspect, and terrain roughness information
     if (verbose) {
-      message("averaging and merging elevation, slope and aspect")
+      message("averaging and merging elevation, slope, aspect, and terrain roughness")
     }
 
     vri_bem <- merge_elevation_raster_on_sf(elev_raster = elevation,

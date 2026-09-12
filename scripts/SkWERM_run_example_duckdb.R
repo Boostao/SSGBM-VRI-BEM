@@ -9,6 +9,8 @@ devtools::load_all()
 conn <- init_conn(temp_dir = "./duckdb_tmp", 
                   memory_limit = "14GB", threads = 1L)
 
+connections::connection_view(conn)
+
 #aoi_wkt <- get_aoi_wkt_from_tsa(conn, aoi_name = "Pacific")
 aoi_wkt <- "MULTIPOLYGON (((1065018 932215.1, 941827.7 932215.1, 941827.7 1016988, 1065018 1016988, 1065018 932215.1)))"
 #aoi_wkt <- sf::st_read("D:/Boostao/SSGBM-data/Skeena Region Boundary", layer = "Skeena_region")$geometry |> sf::st_transform(3005) |> sf::st_union() |> wk::as_wkt() |> paste0()

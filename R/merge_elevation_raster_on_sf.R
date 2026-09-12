@@ -1,15 +1,20 @@
-#' Compute slope and aspect from elevation and their mean by polygon
+#' Compute slope, aspect, and terrain roughness from elevation by polygon
 #'
-#' This function overlays the user-specified polygon feature class with slope and aspect raster to
-#' add mean aspect, mean slope and slope modifiers to the polygon attributes
+#' This function overlays the user-specified polygon feature class with terrain
+#' rasters derived from elevation to add mean aspect, mean slope, mean terrain
+#' roughness index, and slope modifiers to the polygon attributes.
 #'
 #' @param elev_raster SpatRaster object that represent the elevation
 #' @param vri_bem sf object containing VRI-BEM
 #' @param elevation_threshold numeric elevation threshold used to create above elevation indicator (`ABOVE_ELEV_THOLD`)
-#' @param terrain_raster SpatRaster that contains slope and aspect computed in radiants
-#' @return VRI-BEM augmented of the following variables : MEAN_ASP, MEAN_SLOPE, SLOPE_MOD and ABOVE_ELEV_THOLD.
+#' @param terrain_raster Optional SpatRaster that contains `slope` and `aspect`
+#'   computed in radians. If `TRI` is absent it is derived from `elev_raster`
+#'   automatically.
+#' @return VRI-BEM augmented of the following variables: `MEAN_ASP`,
+#'   `MEAN_SLOPE`, `MEAN_TRI`, `SLOPE_MOD`, and `ABOVE_ELEV_THOLD`.
 #' @details
-#' Aspect and slope are calculated by extracting the information from the elevation raster.
+#' Aspect, slope, and terrain roughness index are calculated by extracting the
+#' information from terrain rasters derived from the elevation raster.
 #'
 #' Based on whether the the elevation is above the selected threshold then ABOLVE_ELEV_THOLD is created with either "Y" or "N".
 #'
@@ -27,17 +32,14 @@ merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_thresho
 
   if (FALSE) {
     .<-aspect<-BEUMC_S1<-BEUMC_S2<-BEUMC_S3<-BGC_ZONE<-dem<-ID<-MEAN_ASP<-MEAN_SLOPE<-slope<-
-      SLOPE_MOD<-NULL
+      TRI<-MEAN_TRI<-SLOPE_MOD<-NULL
   }
 
   # TODO check if terra is able to compute this even when the raster is to big to me loaded in RAM at once
-  # Compute slope and aspect ----
+  # Compute slope, aspect, and terrain roughness ----
+  terrain_raster <- prepare_terrain_raster(elev_raster = elev_raster, terrain_raster = terrain_raster)
 
-  if (is.null(terrain_raster)) {
-    terrain_raster <- terra::terrain(elev_raster, v = c("slope", "aspect"), unit = "radians")
-  }
-
-  # Combine elevation slope and aspect into one layered raster
+  # Combine elevation, slope, aspect, and TRI into one layered raster
   add(terrain_raster) <- elev_raster
 
   # Extract raster values for each of vri_bem polygons ----
@@ -57,6 +59,7 @@ merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_thresho
     )[, .(
       ELEV = mean(dem, na.rm = TRUE),
       MEAN_SLOPE = mean(slope, na.rm = TRUE ) * constant1,
+      MEAN_TRI = mean(TRI, na.rm = TRUE),
       MEAN_ASP = {zslope <- slope > 0; zslope_sum <- sum(zslope, na.rm = T); (
         (
           atan2(
@@ -82,7 +85,7 @@ merge_elevation_raster_on_sf <- function(elev_raster, vri_bem, elevation_thresho
   data.table::setDT(vri_bem)
 
   # Merge info into VRI-BEM ----
-  for (variable in c("ELEV", "MEAN_SLOPE", "MEAN_ASP")) {
+  for (variable in c("ELEV", "MEAN_SLOPE", "MEAN_TRI", "MEAN_ASP")) {
     # remove variables if they already exist in vri_bem
     if (!is.null(vri_bem[[variable]])){
       data.table::set(vri_bem, j = variable, value = NULL)
