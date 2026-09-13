@@ -1,7 +1,10 @@
 #'Clean up the VRI-BEM-WHR output
-#'This function cleans up the final VRI-BEM-WHR output (removes extraneous fields), removes slivers < 1m^2, and adds the unique ID (PolyID) and ECO_TYPE
+#'This function cleans up the final VRI-BEM-WHR output (removes extraneous
+#'fields), merges polygons smaller than `min_area_m2` into the most similar
+#'nearby polygon, and adds the unique ID (PolyID) and ECO_TYPE.
 #'
 #' @param vri_bem VRI-BEM feature class
+#' @param min_area_m2 Minimum polygon area threshold in square metres.
 #'
 #' @return "cleaned" vri_bem
 #' @importFrom tidyr unite
@@ -9,7 +12,91 @@
 #' @export
 #'
 
-clean_vri_bem_output <- function(vri_bem) {
+#' @noRd
+merge_small_polygon_slivers <- function(vri_bem,
+                                        min_area_m2 = 1000,
+                                        similarity_fields = c("BGC_ZONE", "BGC_SUBZON", "BGC_VRT", "BGC_PHASE", "BEUMC_S1")) {
+
+  if (!inherits(vri_bem, "sf") || nrow(vri_bem) < 2L) {
+    return(vri_bem)
+  }
+
+  min_area <- units::set_units(min_area_m2, "m^2")
+  working <- sf::st_make_valid(vri_bem)
+  similarity_fields <- intersect(similarity_fields, names(working))
+
+  same_value <- function(x, y) {
+    (is.na(x) && is.na(y)) || (!is.na(x) && !is.na(y) && as.character(x) == as.character(y))
+  }
+
+  repeat {
+    areas <- sf::st_area(working)
+    sliver_idx <- which(areas < min_area)
+
+    if (!length(sliver_idx) || nrow(working) < 2L) {
+      break
+    }
+
+    current_idx <- sliver_idx[which.min(as.numeric(areas[sliver_idx]))]
+    candidate_idx <- setdiff(seq_len(nrow(working)), current_idx)
+
+    if (!length(candidate_idx)) {
+      break
+    }
+
+    touching_idx <- candidate_idx[
+      sf::st_touches(
+        working[current_idx, , drop = FALSE],
+        working[candidate_idx, , drop = FALSE],
+        sparse = TRUE
+      )[[1]]
+    ]
+
+    if (!length(touching_idx)) {
+      intersecting_idx <- candidate_idx[
+        sf::st_intersects(
+          working[current_idx, , drop = FALSE],
+          working[candidate_idx, , drop = FALSE],
+          sparse = TRUE
+        )[[1]]
+      ]
+
+      if (length(intersecting_idx)) {
+        touching_idx <- intersecting_idx
+      }
+    }
+
+    if (length(touching_idx)) {
+      candidate_idx <- touching_idx
+    }
+
+    similarity <- vapply(candidate_idx, function(idx) {
+      sum(vapply(similarity_fields, function(field) {
+        same_value(working[[field]][current_idx], working[[field]][idx])
+      }, logical(1)))
+    }, integer(1))
+
+    distances <- as.numeric(sf::st_distance(
+      working[current_idx, , drop = FALSE],
+      working[candidate_idx, , drop = FALSE]
+    ))
+    candidate_areas <- as.numeric(areas[candidate_idx])
+    target_idx <- candidate_idx[order(-similarity, distances, -candidate_areas, candidate_idx)][1L]
+
+    target_row <- working[target_idx, , drop = FALSE]
+    sf::st_geometry(target_row) <- sf::st_make_valid(sf::st_union(
+      sf::st_geometry(target_row),
+      sf::st_geometry(working[current_idx, , drop = FALSE])
+    ))
+
+    keep_idx <- setdiff(seq_len(nrow(working)), c(current_idx, target_idx))
+    working <- rbind(working[keep_idx, , drop = FALSE], target_row)
+  }
+
+  working
+}
+
+clean_vri_bem_output <- function(vri_bem, min_area_m2 = 1000) {
 
   if (FALSE) {
     ABOVE_ELEV_THOLD<-AGE_CL_STD<-AGE_CL_STS<-BCLCS_LV_1<-BCLCS_LV_5<-BEU_BEC<-BGC_PHASE<-BGC_ZONE<-
@@ -26,24 +113,29 @@ clean_vri_bem_output <- function(vri_bem) {
       VRI_SURVEY_YEAR<-BEUMC_S1<-BGC_label<-NULL
   }
 
-  #Exclude polygon fragments smaller than 1 m² (can make this larger if needed)
-  #Possible future update: dissolve fragments into nearby polygons
+  # Merge small polygons into the best nearby ecosystem match before final cleanup.
   vri_bem <-  vri_bem |>
-    dplyr::mutate(finalarea = st_area(vri_bem)) |>
-    dplyr::filter(finalarea >= units::set_units(1, "m^2")) |>
+    merge_small_polygon_slivers(min_area_m2 = min_area_m2) |>
+    dplyr::mutate(finalarea = sf::st_area(Shape)) |>
+    dplyr::filter(finalarea > units::set_units(0, "m^2")) |>
     mutate(Shape_Area = as.numeric(finalarea)) |>
     dplyr::select(-(finalarea))
 
   #set as data table for quicker processing
   vri_bem_dt <- as.data.table(vri_bem)
 
+  if (!"aoi_name" %in% names(vri_bem_dt)) {
+    vri_bem_dt[, aoi_name := "AOI"]
+  }
+
   #Keep only necessary variables
   vri_bem_dt <- vri_bem_dt |>
 
-    dplyr::select(FEATURE_ID, BCLCS_LV_1:BCLCS_LV_5,LAND_CD_1,COV_PCT_1,LBL_VEGCOV, SOIL_MOISTURE_REGIME_1, SOIL_NUTRIENT_REGIME, SITE_POSITION_MESO, CR_CLOSURE, SPEC_CD_1, SPEC_PCT_1, SPEC_CD_2, SPEC_PCT_2, SPEC_CD_3, SPEC_PCT_3, SPEC_CD_4, SPEC_PCT_4, SPEC_CD_5, SPEC_PCT_5, SPEC_CD_6, SPEC_PCT_6,PROJ_AGE_1, POLY_COMM, TEIS_ID,SITE_INDEX,EST_SITE_INDEX,ECO_SEC,BGC_ZONE, BGC_SUBZON, BGC_VRT,BGC_PHASE,SDEC_1,BEUMC_S1,REALM_1,GROUP_1,CLASS_1,KIND_1,STRCT_S1,STAND_A1,SDEC_2,BEUMC_S2,REALM_2,GROUP_2,CLASS_2,KIND_2,STRCT_S2,STAND_A2,SDEC_3,BEUMC_S3,REALM_3,GROUP_3,CLASS_3,KIND_3,SITE_M3A,STRCT_S3,STAND_A3,AGE_CL_STS,AGE_CL_STD,FORESTED_1:FORESTED_3,ABOVE_ELEV_THOLD,VRI_SURVEY_YEAR, VRI_AGE_CL_STS,VRI_AGE_CL_STD,CROWN_ALL_1:CROWN_ALL_3,Salmon,SLOPE_MOD,ELEV,MEAN_SLOPE,MEAN_TRI,MEAN_ASP,STS_CLIMAX_1:STAND_CLIMAX_1,STS_CLIMAX_2:STAND_CLIMAX_2,STS_CLIMAX_3:STAND_CLIMAX_3,DSTRB_HIST,MRSRD_Y,MRSRD_A,MRSRD_D,MRSRD_S,SIFA,most_recent_fire, percent_burned,dplyr::matches("_(6C|RSI)_(SU|CAP)_(1|2|3|HV|WA)$"),lbl_edit, Lbl_edit_wl,Shape_Area,Shape)|> dplyr::select(-(rrm_merge_ind))
+    dplyr::select(aoi_name, FEATURE_ID, BCLCS_LV_1:BCLCS_LV_5,LAND_CD_1,COV_PCT_1,LBL_VEGCOV, SOIL_MOISTURE_REGIME_1, SOIL_NUTRIENT_REGIME, SITE_POSITION_MESO, CR_CLOSURE, SPEC_CD_1, SPEC_PCT_1, SPEC_CD_2, SPEC_PCT_2, SPEC_CD_3, SPEC_PCT_3, SPEC_CD_4, SPEC_PCT_4, SPEC_CD_5, SPEC_PCT_5, SPEC_CD_6, SPEC_PCT_6,PROJ_AGE_1, POLY_COMM, TEIS_ID,SITE_INDEX,EST_SITE_INDEX,ECO_SEC,BGC_ZONE, BGC_SUBZON, BGC_VRT,BGC_PHASE,SDEC_1,BEUMC_S1,REALM_1,GROUP_1,CLASS_1,KIND_1,STRCT_S1,STAND_A1,SDEC_2,BEUMC_S2,REALM_2,GROUP_2,CLASS_2,KIND_2,STRCT_S2,STAND_A2,SDEC_3,BEUMC_S3,REALM_3,GROUP_3,CLASS_3,KIND_3,SITE_M3A,STRCT_S3,STAND_A3,AGE_CL_STS,AGE_CL_STD,FORESTED_1:FORESTED_3,ABOVE_ELEV_THOLD,VRI_SURVEY_YEAR, VRI_AGE_CL_STS,VRI_AGE_CL_STD,CROWN_ALL_1:CROWN_ALL_3,Salmon,SLOPE_MOD,ELEV,MEAN_SLOPE,MEAN_TRI,MEAN_ASP,STS_CLIMAX_1:STAND_CLIMAX_1,STS_CLIMAX_2:STAND_CLIMAX_2,STS_CLIMAX_3:STAND_CLIMAX_3,DSTRB_HIST,MRSRD_Y,MRSRD_A,MRSRD_D,MRSRD_S,SIFA,most_recent_fire, percent_burned,dplyr::matches("_(6C|RSI)_(SU|CAP)_(1|2|3|HV|WA)$"),lbl_edit, Lbl_edit_wl,Shape_Area,rrm_merge_ind,Shape)|> dplyr::select(-(rrm_merge_ind))
 
   #Create unique ID
-  vri_bem_dt[,PolyID := paste0(gsub("^(.).*(.)$","\\1\\2",aoi_name),"_",FEATURE_ID,"_",TEIS_ID,sep = "")]
+  vri_bem_dt[,PolyID := paste0(gsub("^(.).*(.)$","\\1\\2",ifelse(is.na(aoi_name) | aoi_name == "", "AOI", aoi_name)),"_",FEATURE_ID,"_",TEIS_ID,sep = "")]
+  vri_bem_dt[, aoi_name := NULL]
 
   #Find and correct duplicates
   setDT(vri_bem_dt)[, dupID := rowid(PolyID)]

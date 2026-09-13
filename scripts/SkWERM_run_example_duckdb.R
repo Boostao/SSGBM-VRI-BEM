@@ -250,3 +250,4 @@ if(nrow(check)>0){
 }
 
 SkWERM_final <- clean_vri_bem_output(vri_bem = SkWERM_VRI_BEM_WHR)
+skwerm_final_path <- clean_vri_bem_output(vri_bem = Moose_SkWERM, min_area_m2 = 1000)

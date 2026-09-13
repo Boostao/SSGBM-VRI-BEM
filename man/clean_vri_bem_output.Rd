@@ -2,18 +2,20 @@
 % Please edit documentation in R/clean_vri_bem_output.R
 \name{clean_vri_bem_output}
 \alias{clean_vri_bem_output}
-\title{Clean up the VRI-BEM-WHR output
-This function cleans up the final VRI-BEM-WHR output (removes extraneous fields), removes slivers < 1m^2, and adds the unique ID (PolyID) and ECO_TYPE}
+	itle{Clean up the VRI-BEM-WHR output
+This function cleans up the final VRI-BEM-WHR output (removes extraneous fields), merges polygons smaller than \code{min_area_m2} into the most similar nearby polygon, and adds the unique ID (PolyID) and ECO_TYPE.}
 \usage{
-clean_vri_bem_output(vri_bem)
+clean_vri_bem_output(vri_bem, min_area_m2 = 1000)
 }
 \arguments{
 \item{vri_bem}{VRI-BEM feature class}
+
+\item{min_area_m2}{Minimum polygon area threshold in square metres.}
 }
 \value{
 "cleaned" vri_bem
 }
 \description{
 Clean up the VRI-BEM-WHR output
-This function cleans up the final VRI-BEM-WHR output (removes extraneous fields), removes slivers < 1m^2, and adds the unique ID (PolyID) and ECO_TYPE
+This function cleans up the final VRI-BEM-WHR output (removes extraneous fields), merges polygons smaller than \code{min_area_m2} into the most similar nearby polygon, and adds the unique ID (PolyID) and ECO_TYPE.
 }
