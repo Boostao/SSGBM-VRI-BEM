@@ -11,6 +11,7 @@ terra_rrm_create_RRM_ecosystem_from_rasters(
   wetlands_dsn,
   rules_xl,
   most_recent_harvest_year,
+  elevation_threshold = NULL,
   kind = c("moose", "bear"),
   lakes_dsn = NULL,
   ccb_dsn = NULL,
@@ -43,6 +44,9 @@ terra_rrm_create_RRM_ecosystem_from_rasters(
 
 \item{most_recent_harvest_year}{Numeric scalar passed to
 \code{\link[=terra_rrm_calc_forest_age_class]{terra_rrm_calc_forest_age_class()}}.}
+
+\item{elevation_threshold}{Numeric scalar used to derive
+\code{ABOVE_ELEV_THOLD} and \code{SLOPE_MOD} when \code{elevation_dsn} is provided.}
 
 \item{kind}{Character vector containing one or both of \code{"moose"} and
 \code{"bear"}.}

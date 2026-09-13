@@ -29,8 +29,16 @@ read_vri <- function(dsn = NULL, layer = "VEG_COMP_LYR_R1_POLY", wkt_filter = ch
     wkt_filter <- wk::as_wkt(wkt_filter)
   }
 
-  if(length(wkt_filter) > 0 ){
-    vri_query <- vri_query |> bcdata::filter(local(bcdata::INTERSECTS(sf::st_as_sfc(wkt_filter))))
+  wkt_filter_sfc <- sf::st_sfc(crs = sf::st_crs(albers))
+  if (length(wkt_filter) > 0) {
+    wkt_filter_sfc <- sf::st_as_sfc(wkt_filter)
+    if (is.na(sf::st_crs(wkt_filter_sfc))) {
+      sf::st_crs(wkt_filter_sfc) <- sf::st_crs(albers)
+    }
+  }
+
+  if(length(wkt_filter_sfc) > 0 ){
+    vri_query <- vri_query |> bcdata::filter(local(bcdata::INTERSECTS(wkt_filter_sfc)))
   }
 
   collect <- number_of_records(vri_query) <= 50000L
@@ -82,9 +90,12 @@ read_vri <- function(dsn = NULL, layer = "VEG_COMP_LYR_R1_POLY", wkt_filter = ch
   vri <- rename_geometry(vri, "Shape")
 
   # if we have a filter cut all the shapes that are outside of the aoi area
-  if (!is.null(wkt_filter)) {
+  if (length(wkt_filter_sfc) > 0) {
+    if (!isTRUE(sf::st_crs(vri) == sf::st_crs(wkt_filter_sfc))) {
+      wkt_filter_sfc <- sf::st_transform(wkt_filter_sfc, sf::st_crs(vri))
+    }
     sf::st_agr(vri) <- "constant"
-    vri <- sf::st_intersection(vri, sf::st_as_sfc(wkt_filter, crs = sf::st_crs(vri))) |>
+    vri <- sf::st_intersection(vri, wkt_filter_sfc) |>
      sf::st_collection_extract() #updated
     vri$Shape <- sf::st_cast(vri$Shape,"MULTIPOLYGON")
   }
@@ -110,6 +121,14 @@ read_bem <- function(dsn, layer = "BEM", wkt_filter = character(0)) {
     wkt_filter <- wk::as_wkt(wkt_filter)
   }
 
+  wkt_filter_sfc <- sf::st_sfc(crs = sf::st_crs(albers))
+  if (length(wkt_filter) > 0) {
+    wkt_filter_sfc <- sf::st_as_sfc(wkt_filter)
+    if (is.na(sf::st_crs(wkt_filter_sfc))) {
+      sf::st_crs(wkt_filter_sfc) <- sf::st_crs(albers)
+    }
+  }
+
   bem <- sf::st_read(
     dsn = dsn,
     layer = layer,
@@ -123,9 +142,12 @@ read_bem <- function(dsn, layer = "BEM", wkt_filter = character(0)) {
     bem <- bem |> sf::st_transform(3005)
   }
 
-  if(length(wkt_filter) > 0 ){
+  if(length(wkt_filter_sfc) > 0 ){
+    if (!isTRUE(sf::st_crs(bem) == sf::st_crs(wkt_filter_sfc))) {
+      wkt_filter_sfc <- sf::st_transform(wkt_filter_sfc, sf::st_crs(bem))
+    }
     sf::st_agr(bem) <- "constant"
-    bem <- bem |> sf::st_intersection(sf::st_as_sfc(wkt_filter, crs = sf::st_crs(bem)))
+    bem <- bem |> sf::st_intersection(wkt_filter_sfc)
   }
 
   bem <- rename_geometry(bem, "Shape")

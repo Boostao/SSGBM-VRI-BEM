@@ -270,23 +270,24 @@
     }, character(1L))
   }
 
-  rows <- lapply(beu_layers, function(beu_layer) {
-    selected <- c(key_layers, beu_layer)
-    df <- terra::as.data.frame(x[[selected]], xy = FALSE, cells = FALSE, na.rm = FALSE)
-    if (is.null(df) || nrow(df) == 0L) {
-      return(NULL)
-    }
+  selected <- c(key_layers, beu_layers)
+  df <- terra::as.data.frame(x[[selected]], xy = FALSE, cells = FALSE, na.rm = FALSE)
+  if (is.null(df) || nrow(df) == 0L) {
+    return(NULL)
+  }
 
-    names(df)[names(df) == beu_layer] <- "BEU_MC"
-    df <- df[, c(key_layers, "BEU_MC"), drop = FALSE]
-    for (idx in seq_along(df)) {
-      df[[idx]] <- clean_value(df[[idx]])
-    }
-    df <- df[!is.na(df$BEU_MC), , drop = FALSE]
-    if (nrow(df) == 0L) {
+  for (idx in seq_along(df)) {
+    df[[idx]] <- clean_value(df[[idx]])
+  }
+
+  rows <- lapply(beu_layers, function(beu_layer) {
+    layer_rows <- df[, c(key_layers, beu_layer), drop = FALSE]
+    names(layer_rows)[names(layer_rows) == beu_layer] <- "BEU_MC"
+    layer_rows <- layer_rows[!is.na(layer_rows$BEU_MC), , drop = FALSE]
+    if (nrow(layer_rows) == 0L) {
       return(NULL)
     }
-    df
+    layer_rows
   })
 
   rows <- Filter(Negate(is.null), rows)
@@ -944,6 +945,7 @@ terra_rrm_reduce_unique_ecosystem_dt <- function(unique_ecosystem_dt,
 #' @export
 terra_rrm_merge_unique_ecosystem_fields <- function(x,
                                                     unique_ecosystem_dt,
+                                                    available_codes = NULL,
                                                     filename = NULL,
                                                     overwrite = FALSE) {
   stopifnot(inherits(x, "SpatRaster"))
@@ -951,7 +953,7 @@ terra_rrm_merge_unique_ecosystem_fields <- function(x,
 
   unique_ecosystem_dt <- terra_rrm_reduce_unique_ecosystem_dt(
     unique_ecosystem_dt,
-    available_codes = .terra_rrm_available_ecosystem_codes(x)
+    available_codes = if (is.null(available_codes)) .terra_rrm_available_ecosystem_codes(x) else available_codes
   )
 
   component_key_layers <- vapply(

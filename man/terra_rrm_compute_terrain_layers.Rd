@@ -7,6 +7,7 @@
 terra_rrm_compute_terrain_layers(
   x,
   elevation_threshold,
+  terrain_raster = NULL,
   filename = NULL,
   overwrite = FALSE
 )
@@ -18,13 +19,17 @@ metres).}
 \item{elevation_threshold}{Numeric. Elevation (m) above which
 \code{ABOVE_ELEV_THOLD} is set to \code{"Y"}.}
 
+\item{terrain_raster}{Optional \code{SpatRaster} with \code{slope} and \code{aspect}
+layers in radians. When omitted, terrain layers are derived from
+\code{elevation} using \code{\link[terra:terrain]{terra::terrain()}}.}
+
 \item{filename}{Optional path to write the augmented stack to disk.}
 
 \item{overwrite}{Logical passed to \code{terra::writeRaster}.}
 }
 \value{
-The input \code{SpatRaster} with two additional layers: \code{MEAN_SLOPE} and
-\code{ABOVE_ELEV_THOLD}.
+The input \code{SpatRaster} with five additional layers: \code{ELEV},
+\code{MEAN_SLOPE}, \code{MEAN_ASP}, \code{ABOVE_ELEV_THOLD}, and \code{SLOPE_MOD}.
 }
 \description{
 These helpers are the foundation for a terra-native pipeline that starts
@@ -33,9 +38,9 @@ legacy sf/data.table or DuckDB workflows.
 Derive per-cell terrain layers from the stacked elevation layer
 }
 \details{
-Computes \code{MEAN_SLOPE} (slope in percent, matching the \code{downscale_elevation}
-convention: radians * 57.29578 / 90) and \code{ABOVE_ELEV_THOLD} ("Y"/"N" factor)
-from the \code{elevation} layer already present in the input stack, and adds them
-as new layers.  Must be called after \code{.terra_rrm_read_input_stack()} and
-before any correction step that depends on slope or the elevation threshold.
+Computes \code{ELEV}, \code{MEAN_SLOPE}, \code{MEAN_ASP}, \code{ABOVE_ELEV_THOLD}, and
+\code{SLOPE_MOD} from the \code{elevation} layer already present in the input stack,
+and adds them as new layers. Must be called after
+\code{.terra_rrm_read_input_stack()} and before correction steps that depend on
+terrain or elevation-threshold attributes.
 }

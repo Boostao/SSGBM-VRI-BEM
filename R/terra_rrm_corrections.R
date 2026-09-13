@@ -274,6 +274,7 @@ set_raster_levels_from_conv <- function(x, factor_conv_list) {
   }
 
   total <- terra::ifel(!is.na(x[[1]]), 0, NA)
+  raster_conv <- .terra_rrm_get_raster_conv()
   for (idx in seq_along(species_layers)) {
     species_layer <- species_layers[[idx]]
     pct_layer <- pct_layers[[idx]]
@@ -281,7 +282,7 @@ set_raster_levels_from_conv <- function(x, factor_conv_list) {
       next
     }
 
-    species_codes <- .terra_rrm_layer_codes(x, species_layer, species_labels, .terra_rrm_get_raster_conv()$vri, strict = FALSE)
+    species_codes <- .terra_rrm_layer_codes(x, species_layer, species_labels, raster_conv$vri, strict = FALSE)
     species_mask <- .terra_rrm_match_codes(x[[species_layer]], species_codes)
     contribution <- terra::ifel(
       species_mask == 1,
@@ -462,7 +463,8 @@ set_raster_levels_from_conv <- function(x, factor_conv_list) {
 
   terra::writeRaster(write_result, filename = filename, overwrite = overwrite)
   result <- terra::rast(filename)
-  set_raster_levels_from_conv(result, c(raster_conv$vri, raster_conv$bem))
+  level_conv <- .terra_rrm_get_raster_conv()
+  set_raster_levels_from_conv(result, c(level_conv$vri, level_conv$bem))
 }
 
 
@@ -551,6 +553,64 @@ terra_rrm_apply_rules <- function(x,
   output_layers <- output_layers[nzchar(output_layers)]
   species_layers <- grep("^SPEC_CD_[0-9]+$", names(result), value = TRUE)
   pct_layers <- grep("^SPEC_PCT_[0-9]+$", names(result), value = TRUE)
+  layer_versions <- setNames(as.list(rep.int(0L, length(names(result)))), names(result))
+  input_mask_cache <- new.env(parent = emptyenv())
+  tree_mask_cache <- new.env(parent = emptyenv())
+  output_value_cache <- new.env(parent = emptyenv())
+
+  get_layer_version <- function(layer_name) {
+    if (layer_name %in% names(layer_versions)) {
+      return(layer_versions[[layer_name]])
+    }
+    0L
+  }
+
+  bump_layer_versions <- function(layer_names) {
+    for (layer_name in unique(layer_names)) {
+      if (layer_name %in% names(layer_versions)) {
+        layer_versions[[layer_name]] <- layer_versions[[layer_name]] + 1L
+      }
+    }
+  }
+
+  get_cached_input_mask <- function(layer_name, rule_value) {
+    cache_key <- paste(layer_name, get_layer_version(layer_name), trimws(as.character(rule_value)), sep = "\r")
+    if (exists(cache_key, envir = input_mask_cache, inherits = FALSE)) {
+      return(get(cache_key, envir = input_mask_cache, inherits = FALSE))
+    }
+
+    mask <- .terra_rrm_rule_value_mask(result, layer_name, rule_value)
+    assign(cache_key, mask, envir = input_mask_cache)
+    mask
+  }
+
+  get_cached_tree_mask <- function(tree_rule_value, pct_value) {
+    relevant_layers <- intersect(c(species_layers, pct_layers), names(layer_versions))
+    version_signature <- if (length(relevant_layers) > 0L) {
+      paste(vapply(relevant_layers, get_layer_version, numeric(1L)), collapse = "\r")
+    } else {
+      ""
+    }
+    cache_key <- paste(version_signature, trimws(as.character(tree_rule_value)), trimws(as.character(pct_value)), sep = "\r")
+    if (exists(cache_key, envir = tree_mask_cache, inherits = FALSE)) {
+      return(get(cache_key, envir = tree_mask_cache, inherits = FALSE))
+    }
+
+    mask <- .terra_rrm_tree_rule_mask(result, tree_rule_value, pct_value, species_layers, pct_layers)
+    assign(cache_key, mask, envir = tree_mask_cache)
+    mask
+  }
+
+  get_cached_output_value <- function(layer_name, output_value) {
+    cache_key <- paste(layer_name, trimws(as.character(output_value)), sep = "\r")
+    if (exists(cache_key, envir = output_value_cache, inherits = FALSE)) {
+      return(get(cache_key, envir = output_value_cache, inherits = FALSE))
+    }
+
+    resolved_value <- .terra_rrm_resolve_output_value(result, layer_name, output_value)
+    assign(cache_key, resolved_value, envir = output_value_cache)
+    resolved_value
+  }
 
   for (rule_idx in seq_len(nrow(rules_dt))) {
     row_values <- rules_dt[rule_idx, , drop = FALSE]
@@ -561,7 +621,7 @@ terra_rrm_apply_rules <- function(x,
       if (is.na(rule_value) || !nzchar(trimws(as.character(rule_value)))) {
         next
       }
-      mask <- .terra_rrm_rule_mask(mask, .terra_rrm_rule_value_mask(result, layer_name, rule_value))
+      mask <- .terra_rrm_rule_mask(mask, get_cached_input_mask(layer_name, rule_value))
     }
 
     if (length(tree_rule_cd_columns) > 0L) {
@@ -571,7 +631,7 @@ terra_rrm_apply_rules <- function(x,
         pct_value <- if (is.null(pct_name)) NA else row_values[[pct_name]][[1]]
         tree_rule_value <- row_values[[cd_name]][[1]]
         if (!is.na(tree_rule_value) && nzchar(trimws(as.character(tree_rule_value)))) {
-          tree_mask <- .terra_rrm_tree_rule_mask(result, tree_rule_value, pct_value, species_layers, pct_layers)
+          tree_mask <- get_cached_tree_mask(tree_rule_value, pct_value)
           mask <- .terra_rrm_rule_mask(mask, tree_mask)
         }
       }
@@ -585,7 +645,7 @@ terra_rrm_apply_rules <- function(x,
       }
 
       target_layer <- if (identical(layer_name, "BEUMC")) "BEUMC_S1" else layer_name
-      resolved_value <- .terra_rrm_resolve_output_value(result, target_layer, output_value)
+      resolved_value <- get_cached_output_value(target_layer, output_value)
       result <- .terra_rrm_apply_constant(result, target_layer, mask, resolved_value)
       assigned_layers <- c(assigned_layers, target_layer)
     }
@@ -593,6 +653,8 @@ terra_rrm_apply_rules <- function(x,
     if (length(assigned_layers) == 0L) {
       next
     }
+
+    bump_layer_versions(assigned_layers)
   }
 
   if (all(c("BEUMC_S1", "BEUMC_S2", "SDEC_1", "SDEC_2", "SDEC_3") %in% names(result))) {
@@ -610,7 +672,8 @@ terra_rrm_apply_rules <- function(x,
 
   terra::writeRaster(write_result, filename = filename, overwrite = overwrite)
   result <- terra::rast(filename)
-  set_raster_levels_from_conv(result, c(raster_conv$vri, raster_conv$bem))
+  level_conv <- .terra_rrm_get_raster_conv()
+  set_raster_levels_from_conv(result, c(level_conv$vri, level_conv$bem))
 }
 
 
@@ -677,28 +740,66 @@ terra_rrm_apply_rules <- function(x,
     stop(sprintf("Wetland lookup table is missing required columns: %s", paste(missing_cols, collapse = ", ")), call. = FALSE)
   }
 
-  result <- terra::ifel(!is.na(curr_beu_code), NA, NA)
+  wl_pct <- x[["wl_pct"]]
+  wl_bucket <- terra::ifel(
+    is.na(wl_pct),
+    NA,
+    terra::ifel(
+      wl_pct < 8, 0,
+      terra::ifel(
+        wl_pct < 14, 1,
+        terra::ifel(
+          wl_pct < 25, 2,
+          terra::ifel(
+            wl_pct < 35, 3,
+            terra::ifel(
+              wl_pct < 45, 4,
+              terra::ifel(
+                wl_pct < 55, 5,
+                terra::ifel(
+                  wl_pct < 65, 6,
+                  terra::ifel(
+                    wl_pct < 75, 7,
+                    terra::ifel(wl_pct < 80, 8, 10)
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+  names(wl_bucket) <- names(wl_pct)
 
-  thresholds <- list(
-    list(min = 8, max = 14, col = "Code_WL1"),
-    list(min = 14, max = 25, col = "Code_WL2"),
-    list(min = 25, max = 35, col = "Code_WL3"),
-    list(min = 35, max = 45, col = "Code_WL4"),
-    list(min = 45, max = 55, col = "Code_WL5"),
-    list(min = 55, max = 65, col = "Code_WL6"),
-    list(min = 65, max = 75, col = "Code_WL7"),
-    list(min = 75, max = 80, col = "Code_WL8")
+  bucket_specs <- data.frame(
+    bucket = c(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 10L),
+    column = c("Code_WL1", "Code_WL2", "Code_WL3", "Code_WL4", "Code_WL5", "Code_WL6", "Code_WL7", "Code_WL8", "Code_WL10"),
+    stringsAsFactors = FALSE
   )
 
-  for (threshold in thresholds) {
-    selected <- .terra_rrm_lookup_numeric_raster(curr_beu_code, curr_beu_code, buc, "Code_Orig", threshold$col, NA)
-    result <- terra::ifel(x[["wl_pct"]] >= threshold$min & x[["wl_pct"]] < threshold$max, selected, result)
+  bucket_lookup <- do.call(rbind, lapply(seq_len(nrow(buc)), function(row_idx) {
+    code_orig <- suppressWarnings(as.numeric(as.character(buc[["Code_Orig"]][[row_idx]])))
+    if (is.na(code_orig)) {
+      return(NULL)
+    }
+
+    selected_codes <- vapply(bucket_specs$column, function(column_name) {
+      suppressWarnings(as.numeric(as.character(buc[[column_name]][[row_idx]])))
+    }, numeric(1L))
+
+    data.frame(
+      composite_key = code_orig * 100 + bucket_specs$bucket,
+      target_code = selected_codes,
+      stringsAsFactors = FALSE
+    )
+  }))
+
+  if (is.null(bucket_lookup) || nrow(bucket_lookup) == 0L) {
+    return(terra::ifel(!is.na(curr_beu_code), NA, NA))
   }
 
-  selected_wl10 <- .terra_rrm_lookup_numeric_raster(curr_beu_code, curr_beu_code, buc, "Code_Orig", "Code_WL10", NA)
-  result <- terra::ifel(x[["wl_pct"]] >= 80, selected_wl10, result)
-  names(result) <- names(curr_beu_code)
-  result
+  .terra_rrm_lookup_by_key_and_age(curr_beu_code, wl_bucket, curr_beu_code, bucket_lookup, multiplier = 100)
 }
 
 
@@ -743,9 +844,11 @@ terra_rrm_correct_bem_from_wetlands <- function(x,
     return(terra::rast(filename))
   }
 
+  non_missing_mask <- .terra_rrm_non_missing_mask(result)
+
   # Remove WL in component 3 before deriving BEU wetland codes.
   wl3_mask <- .terra_rrm_rule_mask(
-    .terra_rrm_non_missing_mask(result),
+    non_missing_mask,
     terra::ifel(result[["SDEC_3"]] > 0, 1, NA),
     terra::ifel(result[["BEUMC_S3"]] == wl_code, 1, NA)
   )
@@ -772,7 +875,7 @@ terra_rrm_correct_bem_from_wetlands <- function(x,
     strict = FALSE
   )
   eligible_mask <- .terra_rrm_rule_mask(
-    .terra_rrm_non_missing_mask(result),
+    non_missing_mask,
     terra::ifel(.terra_rrm_match_codes(result[["BEUMC_S1"]], protected_codes) == 0 | result[["SDEC_1"]] != 10, 1, NA),
     terra::ifel(result[["wl_pct"]] >= 8, 1, NA)
   )
@@ -797,7 +900,7 @@ terra_rrm_correct_bem_from_wetlands <- function(x,
     strict = FALSE
   )
   has_specific_wetland <- .terra_rrm_rule_mask(
-    .terra_rrm_non_missing_mask(result),
+    non_missing_mask,
     terra::ifel(.terra_rrm_match_codes(result[["BEUMC_S1"]], wetland_feature_codes) == 1 |
       .terra_rrm_match_codes(result[["BEUMC_S2"]], wetland_feature_codes) == 1, 1, NA)
   )
@@ -806,7 +909,7 @@ terra_rrm_correct_bem_from_wetlands <- function(x,
   kind_u <- .terra_rrm_layer_codes(result, "KIND_1", "U", raster_conv$bem, strict = FALSE)[[1]]
 
   mask_0_to_1 <- .terra_rrm_rule_mask(
-    .terra_rrm_non_missing_mask(result),
+    non_missing_mask,
     terra::ifel(curr_wl_zone == 0, 1, NA),
     terra::ifel(new_wl_zone == 1, 1, NA),
     terra::ifel(has_specific_wetland == 0, 1, NA)
@@ -816,7 +919,7 @@ terra_rrm_correct_bem_from_wetlands <- function(x,
   result <- .terra_rrm_apply_component_identity(result, 1, mask_0_to_1, realm_w, group_w, kind_u)
 
   mask_0_to_2 <- .terra_rrm_rule_mask(
-    .terra_rrm_non_missing_mask(result),
+    non_missing_mask,
     terra::ifel(curr_wl_zone == 0, 1, NA),
     terra::ifel(new_wl_zone == 2, 1, NA)
   )
@@ -830,36 +933,36 @@ terra_rrm_correct_bem_from_wetlands <- function(x,
   result <- .terra_rrm_apply_component_identity(result, 2, mask_0_to_2, realm_w, group_w, kind_u)
   result <- .terra_rrm_apply_constant(result, "BEUMC_S3", .terra_rrm_rule_mask(mask_0_to_2, terra::ifel(result[["SDEC_3"]] == 0, 1, NA)), NA)
 
-  mask_1_to_0 <- .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(curr_wl_zone == 1, 1, NA), terra::ifel(new_wl_zone == 0, 1, NA))
+  mask_1_to_0 <- .terra_rrm_rule_mask(non_missing_mask, terra::ifel(curr_wl_zone == 1, 1, NA), terra::ifel(new_wl_zone == 0, 1, NA))
   result <- .terra_rrm_shift_component_fields(result, mask_1_to_0, list(c(1, 2), c(2, 3), c(3, NA)))
 
-  mask_2_to_0 <- .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(curr_wl_zone == 2, 1, NA), terra::ifel(new_wl_zone == 0, 1, NA))
+  mask_2_to_0 <- .terra_rrm_rule_mask(non_missing_mask, terra::ifel(curr_wl_zone == 2, 1, NA), terra::ifel(new_wl_zone == 0, 1, NA))
   result <- .terra_rrm_shift_component_fields(result, mask_2_to_0, list(c(2, 3), c(3, NA)))
 
-  mask_3_to_0 <- .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(curr_wl_zone == 3, 1, NA), terra::ifel(new_wl_zone == 0, 1, NA))
+  mask_3_to_0 <- .terra_rrm_rule_mask(non_missing_mask, terra::ifel(curr_wl_zone == 3, 1, NA), terra::ifel(new_wl_zone == 0, 1, NA))
   result <- .terra_rrm_shift_component_fields(result, mask_3_to_0, list(c(3, NA)))
 
-  mask_0_to_3 <- .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(curr_wl_zone == 0, 1, NA), terra::ifel(new_wl_zone == 3, 1, NA))
+  mask_0_to_3 <- .terra_rrm_rule_mask(non_missing_mask, terra::ifel(curr_wl_zone == 0, 1, NA), terra::ifel(new_wl_zone == 3, 1, NA))
   result <- .terra_rrm_shift_component_fields(result, mask_0_to_3, list(c(3, NA)))
   result <- .terra_rrm_apply_constant(result, "BEUMC_S3", mask_0_to_3, wl_code)
   result <- .terra_rrm_apply_component_identity(result, 3, mask_0_to_3, realm_w, group_w, kind_u)
 
-  mask_2_to_1 <- .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(curr_wl_zone == 2, 1, NA), terra::ifel(new_wl_zone == 1, 1, NA))
-  mask_1_to_2 <- .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(curr_wl_zone == 1, 1, NA), terra::ifel(new_wl_zone == 2, 1, NA), terra::ifel(!is.na(result[["BEUMC_S2"]]), 1, NA))
+  mask_2_to_1 <- .terra_rrm_rule_mask(non_missing_mask, terra::ifel(curr_wl_zone == 2, 1, NA), terra::ifel(new_wl_zone == 1, 1, NA))
+  mask_1_to_2 <- .terra_rrm_rule_mask(non_missing_mask, terra::ifel(curr_wl_zone == 1, 1, NA), terra::ifel(new_wl_zone == 2, 1, NA), terra::ifel(!is.na(result[["BEUMC_S2"]]), 1, NA))
   result <- .terra_rrm_shift_component_fields(result, terra::ifel(mask_2_to_1[[1]] == 1 | mask_1_to_2[[1]] == 1, 1, NA), list(c(1, 2), c(2, 1)))
 
-  mask_1_to_3 <- .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(curr_wl_zone == 1, 1, NA), terra::ifel(new_wl_zone == 3, 1, NA))
-  mask_3_to_1 <- .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(curr_wl_zone == 3, 1, NA), terra::ifel(new_wl_zone == 1, 1, NA))
+  mask_1_to_3 <- .terra_rrm_rule_mask(non_missing_mask, terra::ifel(curr_wl_zone == 1, 1, NA), terra::ifel(new_wl_zone == 3, 1, NA))
+  mask_3_to_1 <- .terra_rrm_rule_mask(non_missing_mask, terra::ifel(curr_wl_zone == 3, 1, NA), terra::ifel(new_wl_zone == 1, 1, NA))
   result <- .terra_rrm_shift_component_fields(result, terra::ifel(mask_1_to_3[[1]] == 1 | mask_3_to_1[[1]] == 1, 1, NA), list(c(1, 3), c(3, 1)))
 
-  mask_2_to_3 <- .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(curr_wl_zone == 2, 1, NA), terra::ifel(new_wl_zone == 3, 1, NA), terra::ifel(!is.na(result[["BEUMC_S3"]]), 1, NA))
-  mask_3_to_2 <- .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(curr_wl_zone == 3, 1, NA), terra::ifel(new_wl_zone == 2, 1, NA))
+  mask_2_to_3 <- .terra_rrm_rule_mask(non_missing_mask, terra::ifel(curr_wl_zone == 2, 1, NA), terra::ifel(new_wl_zone == 3, 1, NA), terra::ifel(!is.na(result[["BEUMC_S3"]]), 1, NA))
+  mask_3_to_2 <- .terra_rrm_rule_mask(non_missing_mask, terra::ifel(curr_wl_zone == 3, 1, NA), terra::ifel(new_wl_zone == 2, 1, NA))
   result <- .terra_rrm_shift_component_fields(result, terra::ifel(mask_2_to_3[[1]] == 1 | mask_3_to_2[[1]] == 1, 1, NA), list(c(2, 3), c(3, 2)))
 
   # Combine generic WL into a more specific wetland code when both are present.
   specific_wetland_s1 <- .terra_rrm_match_codes(result[["BEUMC_S1"]], wetland_feature_codes)
   specific_wetland_s2 <- .terra_rrm_match_codes(result[["BEUMC_S2"]], wetland_feature_codes)
-  mask_s1_wl_s2_specific <- .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(result[["BEUMC_S1"]] == wl_code, 1, NA), terra::ifel(specific_wetland_s2 == 1, 1, NA))
+  mask_s1_wl_s2_specific <- .terra_rrm_rule_mask(non_missing_mask, terra::ifel(result[["BEUMC_S1"]] == wl_code, 1, NA), terra::ifel(specific_wetland_s2 == 1, 1, NA))
   result[["SDEC_1"]] <- terra::ifel(mask_s1_wl_s2_specific[[1]] == 1, result[["SDEC_1"]] + result[["SDEC_2"]], result[["SDEC_1"]])
   names(result[["SDEC_1"]]) <- "SDEC_1"
   result[["SDEC_2"]] <- terra::ifel(mask_s1_wl_s2_specific[[1]] == 1, result[["SDEC_3"]], result[["SDEC_2"]])
@@ -868,7 +971,7 @@ terra_rrm_correct_bem_from_wetlands <- function(x,
   names(result[["SDEC_3"]]) <- "SDEC_3"
   result <- .terra_rrm_shift_component_fields(result, mask_s1_wl_s2_specific, list(c(1, 2), c(2, 3), c(3, NA)))
 
-  mask_s2_wl_s1_specific <- .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(result[["BEUMC_S2"]] == wl_code, 1, NA), terra::ifel(specific_wetland_s1 == 1, 1, NA))
+  mask_s2_wl_s1_specific <- .terra_rrm_rule_mask(non_missing_mask, terra::ifel(result[["BEUMC_S2"]] == wl_code, 1, NA), terra::ifel(specific_wetland_s1 == 1, 1, NA))
   result[["SDEC_1"]] <- terra::ifel(mask_s2_wl_s1_specific[[1]] == 1, result[["SDEC_1"]] + result[["SDEC_2"]], result[["SDEC_1"]])
   names(result[["SDEC_1"]]) <- "SDEC_1"
   result[["SDEC_2"]] <- terra::ifel(mask_s2_wl_s1_specific[[1]] == 1, result[["SDEC_3"]], result[["SDEC_2"]])
@@ -877,7 +980,7 @@ terra_rrm_correct_bem_from_wetlands <- function(x,
   names(result[["SDEC_3"]]) <- "SDEC_3"
   result <- .terra_rrm_shift_component_fields(result, mask_s2_wl_s1_specific, list(c(2, 3), c(3, NA)))
 
-  mask_s3_wl_specific <- .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(result[["BEUMC_S3"]] == wl_code, 1, NA), terra::ifel(specific_wetland_s1 == 1 | (specific_wetland_s2 == 1 & specific_wetland_s1 == 0), 1, NA))
+  mask_s3_wl_specific <- .terra_rrm_rule_mask(non_missing_mask, terra::ifel(result[["BEUMC_S3"]] == wl_code, 1, NA), terra::ifel(specific_wetland_s1 == 1 | (specific_wetland_s2 == 1 & specific_wetland_s1 == 0), 1, NA))
   result[["SDEC_1"]] <- terra::ifel(mask_s3_wl_specific[[1]] == 1 & specific_wetland_s1 == 1, result[["SDEC_1"]] + result[["SDEC_3"]], result[["SDEC_1"]])
   names(result[["SDEC_1"]]) <- "SDEC_1"
   result[["SDEC_2"]] <- terra::ifel(mask_s3_wl_specific[[1]] == 1 & specific_wetland_s1 == 0 & specific_wetland_s2 == 1, result[["SDEC_2"]] + result[["SDEC_3"]], result[["SDEC_2"]])
@@ -886,8 +989,8 @@ terra_rrm_correct_bem_from_wetlands <- function(x,
   names(result[["SDEC_3"]]) <- "SDEC_3"
   result <- .terra_rrm_shift_component_fields(result, mask_s3_wl_specific, list(c(3, NA)))
 
-  result <- .terra_rrm_apply_constant(result, "BEUMC_S2", .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(result[["SDEC_2"]] == 0, 1, NA)), NA)
-  result <- .terra_rrm_apply_constant(result, "BEUMC_S3", .terra_rrm_rule_mask(.terra_rrm_non_missing_mask(result), terra::ifel(result[["SDEC_3"]] == 0, 1, NA)), NA)
+  result <- .terra_rrm_apply_constant(result, "BEUMC_S2", .terra_rrm_rule_mask(non_missing_mask, terra::ifel(result[["SDEC_2"]] == 0, 1, NA)), NA)
+  result <- .terra_rrm_apply_constant(result, "BEUMC_S3", .terra_rrm_rule_mask(non_missing_mask, terra::ifel(result[["SDEC_3"]] == 0, 1, NA)), NA)
 
   if (is.null(filename)) {
     return(result)

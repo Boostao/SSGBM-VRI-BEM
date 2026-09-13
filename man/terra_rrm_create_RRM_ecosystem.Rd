@@ -11,8 +11,11 @@ terra_rrm_create_RRM_ecosystem(
   rules_dt,
   unique_ecosystem_dt,
   most_recent_harvest_year,
+  elevation_threshold = NULL,
   kind = c("moose", "bear"),
+  river_buffer_m = 0,
   lake_layer = "lakes",
+  lake_buffer_m = 0,
   apply_small_lakes = lake_layer \%in\% names(x),
   clear_site_ma = TRUE,
   use_ifelse = TRUE,
@@ -39,10 +42,19 @@ lookup values expected by \code{\link[=terra_rrm_merge_unique_ecosystem_fields]{
 \item{most_recent_harvest_year}{Numeric scalar passed to
 \code{\link[=terra_rrm_calc_forest_age_class]{terra_rrm_calc_forest_age_class()}}.}
 
+\item{elevation_threshold}{Optional numeric scalar forwarded to
+\code{\link[=terra_rrm_prepare_ecosystem_stack]{terra_rrm_prepare_ecosystem_stack()}} for terrain-layer derivation.}
+
 \item{kind}{Character vector containing one or both of \code{"moose"} and
 \code{"bear"}.}
 
+\item{river_buffer_m}{Optional non-negative buffer distance in raster map
+units forwarded to \code{\link[=terra_rrm_prepare_ecosystem_stack]{terra_rrm_prepare_ecosystem_stack()}}.}
+
 \item{lake_layer}{Name of the aligned lake-presence layer.}
+
+\item{lake_buffer_m}{Optional non-negative buffer distance in raster map
+units forwarded to \code{\link[=terra_rrm_prepare_ecosystem_stack]{terra_rrm_prepare_ecosystem_stack()}}.}
 
 \item{apply_small_lakes}{Logical. If \code{TRUE}, run
 \code{\link[=terra_rrm_correct_small_lakes]{terra_rrm_correct_small_lakes()}}.}

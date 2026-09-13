@@ -291,7 +291,7 @@ rasterize_rivers <- function(src_datasource, dst_filename, layer =  NULL, a_srs 
 #' @inheritParams rasterize_sf
 #' @return SpatRaster if output_raster is TRUE, NULL otherwise
 #' @importFrom terra `add<-` crs ext rast writeRaster res
-#' @importFrom gdalUtils, gdal_rasterize
+#' @importFrom gdalUtils gdal_rasterize
 #' @export
 
 rasterize_ccb <- function(src_datasource, dst_filename, layer =  NULL, a_srs = NULL, te = NULL,

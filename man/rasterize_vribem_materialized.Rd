@@ -15,7 +15,7 @@ rasterize_vribem_materialized(
   aoi = NULL,
   numeric_attributes = c(paste0("SPEC_PCT_", 1:6), "CR_CLOSURE", "COV_PCT_1",
     "PROJ_AGE_1", "TEIS_ID", "Area_Ha", "AGE_CL_STS", "SDEC_1", "SDEC_2", "SDEC_3",
-    "BGC_VRT", "HARVESTYR"),
+    "BGC_VRT", "HARVESTYR", "SOIL_MOISTURE_REGIME_1"),
   character_attributes = c(paste0("BCLCS_LV_", 1:5), paste0("SPEC_CD_", 1:6),
     "LAND_CD_1", "LBL_VEGCOV", "BGC_ZONE", "BGC_SUBZON", "BGC_PHASE", "SLOPE_MOD",
     "ECO_SEC", "BEUMC_S1", "REALM_1", "GROUP_1", "CLASS_1", "KIND_1", "SITE_S1",
@@ -36,7 +36,9 @@ rasterize_vribem_materialized(
   date_attributes = "HRVSTDT",
   burn = NULL,
   output_raster = FALSE,
-  verbose = TRUE
+  verbose = TRUE,
+  dynamic_factor_conv = FALSE,
+  dynamic_factor_strategy = c("append", "replace")
 )
 }
 \arguments{
@@ -59,6 +61,14 @@ rasterize_vribem_materialized(
 \item{output_raster}{boolean, if TRUE, the resulting raster will be returned}
 
 \item{verbose}{boolean, if TRUE progression message will be printed}
+
+\item{dynamic_factor_conv}{Logical. If TRUE, build character lookup tables
+from distinct values present in the source data instead of relying only on
+package lookup data.}
+
+\item{dynamic_factor_strategy}{Character. Either "append" (preserve existing
+codes and append new values) or "replace" (rebuild codes from observed
+values only).}
 }
 \value{
 SpatRaster if output_raster is TRUE, NULL otherwise

@@ -18,7 +18,9 @@ rasterize_rivers_materialized(
   date_attributes = NULL,
   burn = "rivers",
   output_raster = FALSE,
-  verbose = TRUE
+  verbose = TRUE,
+  dynamic_factor_conv = FALSE,
+  dynamic_factor_strategy = c("append", "replace")
 )
 }
 \arguments{
@@ -41,6 +43,14 @@ rasterize_rivers_materialized(
 \item{output_raster}{boolean, if TRUE, the resulting raster will be returned}
 
 \item{verbose}{boolean, if TRUE progression message will be printed}
+
+\item{dynamic_factor_conv}{Logical. If TRUE, build character lookup tables
+from distinct values present in the source data instead of relying only on
+package lookup data.}
+
+\item{dynamic_factor_strategy}{Character. Either "append" (preserve existing
+codes and append new values) or "replace" (rebuild codes from observed
+values only).}
 }
 \value{
 SpatRaster if output_raster is TRUE, NULL otherwise

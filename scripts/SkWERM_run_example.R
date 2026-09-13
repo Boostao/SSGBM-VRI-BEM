@@ -1,7 +1,9 @@
+devtools::load_all()
 aoi_name <- "Pacific"
 
 #Set area boundary
 aoi_wkt <- read_tsa(tsa_name = paste0(aoi_name," TSA")) %>% wk::as_wkt(.)
+aoi_wkt <- "POLYGON ((1000000 960000, 1002000 960000, 1002000 962000, 1000000 962000, 1000000 960000))"
 
 # read vri and bem layers
 vri <- read_vri(wkt_filter = aoi_wkt)

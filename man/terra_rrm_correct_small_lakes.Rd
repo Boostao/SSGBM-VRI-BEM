@@ -7,6 +7,7 @@
 terra_rrm_correct_small_lakes(
   x,
   lake_layer = "lakes",
+  buffer_m = 0,
   directions = 8,
   filename = NULL,
   overwrite = FALSE
@@ -17,6 +18,10 @@ terra_rrm_correct_small_lakes(
 presence layer.}
 
 \item{lake_layer}{Name of the raster layer indicating lake presence.}
+
+\item{buffer_m}{Optional non-negative buffer distance in raster map units.
+When \verb{> 0}, classified lake patches are expanded before their recoded
+values are applied to the raster stack.}
 
 \item{directions}{Connectivity passed to \code{\link[terra:patches]{terra::patches()}}.}
 

@@ -12,7 +12,10 @@ terra_rrm_prepare_ecosystem_stack(
   rules_dt,
   unique_ecosystem_dt,
   most_recent_harvest_year,
+  elevation_threshold = NULL,
+  river_buffer_m = 0,
   lake_layer = "lakes",
+  lake_buffer_m = 0,
   apply_small_lakes = lake_layer \%in\% names(x),
   clear_site_ma = TRUE,
   use_ifelse = TRUE,
@@ -38,7 +41,18 @@ lookup values expected by \code{\link[=terra_rrm_merge_unique_ecosystem_fields]{
 \item{most_recent_harvest_year}{Numeric scalar passed to
 \code{\link[=terra_rrm_calc_forest_age_class]{terra_rrm_calc_forest_age_class()}}.}
 
+\item{elevation_threshold}{Optional numeric scalar. When provided and
+\code{elevation} exists in \code{x}, terrain layers (\code{ELEV}, \code{MEAN_SLOPE},
+\code{MEAN_ASP}, \code{ABOVE_ELEV_THOLD}, \code{SLOPE_MOD}) are derived at raster-cell
+resolution before correction stages.}
+
+\item{river_buffer_m}{Optional non-negative buffer distance in raster map
+units applied around river pixels before \code{SITE_M3A = "a"} is assigned.}
+
 \item{lake_layer}{Name of the aligned lake-presence layer.}
+
+\item{lake_buffer_m}{Optional non-negative buffer distance in raster map
+units applied around lake pixels before small-lake corrections are run.}
 
 \item{apply_small_lakes}{Logical. If \code{TRUE}, run
 \code{\link[=terra_rrm_correct_small_lakes]{terra_rrm_correct_small_lakes()}}.}
@@ -64,5 +78,5 @@ terra path separate from the legacy polygon and DuckDB workflows.
 \details{
 The input stack must already contain the precomputed raster layers required
 by the stage functions it invokes, such as \code{wl_pct}, \code{MEAN_SLOPE},
-\code{PROJ_AGE_1}, and \code{ABOVE_ELEV_THOLD} when those stages depend on them.
+\code{PROJ_AGE_1}, and terrain-derived layers when those stages depend on them.
 }
