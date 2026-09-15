@@ -80,14 +80,25 @@ fwrite(unique_eco, file = "../unique_ecosystem.csv")
 #3bc ---- disturbances
 #TODO use duckdb for disturbance layer too
 # merge Forest Disturbance Layer
-fdl <- st_read("Forest_Disturbance")
 
-vri_bem <- merge_geometry(vri_bem, fdl, tolerance = units::as_units(10, "m2"))
+# mock V_FDL from CCB
+DBI::dbExecute(conn, "
+  CREATE OR REPLACE VIEW V_FDL AS (
+    SELECT HARVEST_START_YEAR_CALENDAR AS MRSRD_Y,
+          'CUT' AS MRSRD_A,
+          'CON' AS MRSRD_D,
+          'N' AS MRSRD_S,
+          2026 - HARVEST_START_YEAR_CALENDAR AS SIFA,
+          HARVEST_START_YEAR_CALENDAR || '_CUT_N_CON' AS DSTRB_HIST,
+          Shape
+    FROM V_CCB
+  );"
+)
 
 # We will merge CCB instead of FDL since FDL is not available to us.
 merge_geometry_duckdb(conn = conn,
   x_tbl = "VRIBEM",
-  y_tbl = "V_CCB",  #TODO Create table V_FDL or a mock in duckdb
+  y_tbl = "V_FDL",  #TODO Create table V_FDL or a mock in duckdb
   tolerance_m2 = 10,
   result_tbl = "VRIBEM_FDL")
 
