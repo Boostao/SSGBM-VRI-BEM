@@ -42,7 +42,7 @@
 calc_hem_fields_duckdb <- function(conn,
                                    vri_bem_tbl,
                                    fire_tbl         = "V_FIRE",
-                                   harvest_year_col = "HARVEST_START_YEAR_CALENDAR",
+                                   harvest_year_col = "MRSRD_Y",
                                    age_cl_sts_col   = "VRI_AGE_CL_STS",
                                    current_year     = as.integer(format(Sys.Date(), "%Y"))) {
 
