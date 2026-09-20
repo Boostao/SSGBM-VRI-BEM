@@ -503,6 +503,11 @@ init_pem <- function(conn = init_conn(),
                geom,
                tablename = "PEM", 
               .include = c('PRED_NO', '".PRED_CLASS"', 'MODEL', '"MAP.RESPONSE"', 'AREA_M2'))
+  
+  DBI::dbExecute(conn, "DROP INDEX IF EXISTS PEM_IDX;")
+  DBI::dbExecute(conn, "ALTER TABLE PEM RENAME COLUMN \".PRED_CLASS\" TO PEM_PRED_CLASS;")
+  DBI::dbExecute(conn, "CREATE INDEX PEM_IDX ON PEM USING RTREE (Shape);")
+
 }
 
 #' @rdname init

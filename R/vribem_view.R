@@ -77,7 +77,7 @@ vribem_view <- function(conn, validate_intersect = FALSE) {
 
           
         
-        FROM V_VRI VRI
+        FROM V_VRI_NON_FORESTED VRI
         JOIN V_BEM BEM
             ON ST_Intersects(BEM.Shape, VRI.Shape)
       ) a
@@ -97,7 +97,7 @@ vribem_view <- function(conn, validate_intersect = FALSE) {
     DBI::dbExecute(conn, "
       CREATE OR REPLACE TEMP VIEW V_MISSINGBEM AS (
         SELECT V1.FEATURE_ID
-        FROM V_VRI V1
+        FROM V_VRI_NON_FORESTED V1
         LEFT JOIN V_VRIBEM V2
           ON V1.FEATURE_ID = V2.FEATURE_ID
         WHERE V2.FEATURE_ID IS NULL
