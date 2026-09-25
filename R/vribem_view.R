@@ -77,7 +77,7 @@ vribem_view <- function(conn, validate_intersect = FALSE) {
 
           
         
-        FROM V_VRI_NON_FORESTED VRI
+        FROM VRI_AND_PEM VRI
         JOIN V_BEM BEM
             ON ST_Intersects(BEM.Shape, VRI.Shape)
       ) a

@@ -18,24 +18,21 @@
 #' @export
 create_unique_ecosystem_dt <- function(conn, vri_bem, current_unique_ecosystem_csv = NULL) {
 
+
   unique_ecosystem_dt <- DBI::dbGetQuery(conn, 
     paste0("
       SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEU_MC, count(*) AS FREQ
       FROM (
         SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC_S1 AS BEU_MC
         FROM ", vri_bem, " 
-        WHERE SDEC_1 > 0
+        WHERE SDEC_1 > 0 AND (PEM_PRED_CLASS IS NULL OR PEM_PRED_CLASS = 'non-forested') 
         UNION ALL
-        SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC_S2 AS BEU_MC 
-        FROM ", vri_bem, " 
-        WHERE SDEC_2 > 0
-        UNION ALL
-        SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC_S3 AS BEU_MC 
-        FROM ", vri_bem, " 
-        WHERE SDEC_3 > 0
+        SELECT VRI_BEC_ZONE AS BGC_ZONE, VRI_BEC_SUBZON AS BGC_SUBZON, VRI_BEC_VRT AS BGC_VRT, VRI_BEC_PHAS AS BGC_PHASE, PEM_PRED_CLASS AS BEU_MC
+        FROM VRI_AND_PEM
+        WHERE PEM_PRED_CLASS != 'non-forested'
       ) AS sq
-      GROUP BY 1, 2, 3, 4, 5;"))|> setDT()
-  
+      GROUP BY 1, 2, 3, 4, 5;")) |> setDT()
+
   if (!is.null(current_unique_ecosystem_csv)) {
     current_unique_ecosysteme_dt <- fread(current_unique_ecosystem_csv)
     format_unique_ecosystem_dt(current_unique_ecosysteme_dt)

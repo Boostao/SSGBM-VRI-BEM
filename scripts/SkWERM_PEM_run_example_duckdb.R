@@ -21,55 +21,35 @@ filtered_views(conn, aoi_wkt, build_spatial_index = FALSE)
 # Merge VRI and PEM
 merge_vri_pem_duckdb(conn)
 
-any_null_pem <- duckdb_any_null(conn, "VRI_AND_PEM", "PEM_PRED_CLASS")
-any_non_forested_pem <- duckdb_any_value(conn, "VRI_AND_PEM", "PEM_PRED_CLASS", "non-forested")
 
-if(isTRUE(any_non_forested_pem) || isTRUE(any_null_pem)) {
+# 1a ----
+#Merge VRI and BEM, but only for non-forested polygons.
+vribem_view(conn, validate_intersect = FALSE)
 
-  DBI::dbExecute(conn, "
-      CREATE OR REPLACE VIEW V_VRI_NON_FORESTED AS (
-        SELECT *  
-        FROM VRI_AND_PEM a
-        WHERE PEM_PRED_CLASS IS NULL OR PEM_PRED_CLASS = 'non-forested'
-      );")
-  
-  # 1a ----
-  #Merge VRI and BEM, but only for non-forested polygons.
-  vribem_view(conn, validate_intersect = FALSE)
+# Amend large polygons (>3500 ha): dissolve, split by glaciers/lakes/wetlands, re-join BEM
+amend_large_polygons_duckdb(conn,
+                            vri_bem_tbl  = "V_VRIBEM",
+                            lakes_tbl    = "V_LAKES",
+                            glaciers_tbl = "V_GLACIERS",
+                            wetlands_tbl = "V_WETLANDS",
+                            bem_tbl      = "V_BEM",
+                            result_tbl   = "VRIBEM")
 
-  # Amend large polygons (>3500 ha): dissolve, split by glaciers/lakes/wetlands, re-join BEM
-  amend_large_polygons_duckdb(conn,
-                              vri_bem_tbl  = "V_VRIBEM",
-                              lakes_tbl    = "V_LAKES",
-                              glaciers_tbl = "V_GLACIERS",
-                              wetlands_tbl = "V_WETLANDS",
-                              bem_tbl      = "V_BEM",
-                              result_tbl   = "VRIBEM")
-  
-  # 1b ----
-  duckdb::duckdb_read_csv(conn, "beu_bec_corr",  "inst/csv/Allowed_BEC_BEUs_NE_ALL.csv", temporary = TRUE) #TODO update to use system.file on package csv
-  vribem_corrections_view(conn, vri_bem_tbl = "VRIBEM", beu_bec = "beu_bec_corr")
+# 1b ----
+duckdb::duckdb_read_csv(conn, "beu_bec_corr",  "inst/csv/Allowed_BEC_BEUs_NE_ALL.csv", temporary = TRUE) #TODO update to use system.file on package csv
+vribem_corrections_view(conn, vri_bem_tbl = "VRIBEM", beu_bec = "beu_bec_corr")
 
-  #1c ----
-  #Lakes and wetlands
-  # Spatially cut non-lake VRI polygons by FWA Lakes; updates VRIBEM in-place.
-  correct_small_lakes_duckdb(conn,
-                             vri_bem_tbl = "VRIBEM",
-                             lakes_tbl   = "V_LAKES",
-                             batch_size  = 500L)     # ← tune this down if you run into memory issues; the default of 500 is faster but uses more RAM
-                           
-
-  #wetlands
-  duckdb::duckdb_read_csv(conn, "beu_wetland_updates",  "inst/csv/beu_wetland_updates.csv", temporary = TRUE)
-  vri_bem_wetlands_corrections_view(conn, vri_bem = "VRIBEM", beu_wetland_updates = "beu_wetland_updates")
-
-
-}
-
-
-
-
-
+#1c ----
+#Lakes and wetlands
+# Spatially cut non-lake VRI polygons by FWA Lakes; updates VRIBEM in-place.
+correct_small_lakes_duckdb(conn,
+                           vri_bem_tbl = "VRIBEM",
+                           lakes_tbl   = "V_LAKES",
+                           batch_size  = 500L)     # ← tune this down if you run into memory issues; the default of 500 is faster but uses more RAM
+                         
+#wetlands
+duckdb::duckdb_read_csv(conn, "beu_wetland_updates",  "inst/csv/beu_wetland_updates.csv", temporary = TRUE)
+vri_bem_wetlands_corrections_view(conn, vri_bem = "VRIBEM", beu_wetland_updates = "beu_wetland_updates")
 
 #3a ----
 #Moved earlier in the process (need accurate SLOPE_MOD for update_beu_from_rules_dt)
