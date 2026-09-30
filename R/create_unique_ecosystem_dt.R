@@ -23,7 +23,7 @@ create_unique_ecosystem_dt <- function(conn, vri_bem, current_unique_ecosystem_c
     paste0("
       SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEU_MC, SITE_M3A, count(*) AS FREQ
       FROM (
-        SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, CASE WHEN PEM_PRED_CLASS IS NULL OR PEM_PRED_CLASS = 'non-forested' THEN BEUMC_S1 ELSE PEM_PRED_CLASS END AS BEU_MC, SITE_M3A
+        SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC_S1 AS BEU_MC, SITE_M3A
         FROM ", vri_bem, " 
       ) AS sq
       GROUP BY 1, 2, 3, 4, 5, 6;")) |> setDT()

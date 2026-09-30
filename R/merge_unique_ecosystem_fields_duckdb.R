@@ -86,7 +86,7 @@ merge_unique_ecosystem_fields_duckdb <- function(conn,
   # ── 3. Add all output columns (no-op if they already exist) ──────────────
   add_col <- function(col, type = "VARCHAR") {
     DBI::dbExecute(conn, sprintf(
-      "ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s", v, col, type
+      "ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s", vri_bem_tbl, col, type
     ))
   }
 
@@ -128,18 +128,17 @@ merge_unique_ecosystem_fields_duckdb <- function(conn,
   add_col("parkland_ind", "BOOLEAN")
 
   # ── 4. Helper: WHERE clause for ecosystem left-join (nullable BGC keys) ───
-  eco_where <- function(beumc_col) {
-    sprintf(
+  eco_where <- sprintf(
       paste0(
         "%s.BGC_ZONE     = u.BGC_ZONE ",
         "AND %s.BGC_SUBZON  = u.BGC_SUBZON ",
         "AND %s.BGC_VRT  IS NOT DISTINCT FROM u.BGC_VRT ",
         "AND %s.BGC_PHASE IS NOT DISTINCT FROM u.BGC_PHASE ",
-        "AND %s.%s        = u.BEU_MC"
+        "AND %s.BEUMC_S1        = u.BEU_MC"
       ),
-      v, v, v, v, v, beumc_col
-    )
-  }
+      vri_bem_tbl, vri_bem_tbl, vri_bem_tbl, vri_bem_tbl, vri_bem_tbl
+  )
+  
 
   # ── 5. UPDATE: decile 1 ecosystem fields ─────────────────────────────────
   DBI::dbExecute(conn, sprintf(
@@ -168,238 +167,138 @@ merge_unique_ecosystem_fields_duckdb <- function(conn,
        STS_1_Age_gt_249   = u.STA_GT_249
      FROM %s AS u
      WHERE %s",
-    v, tmp_ue, eco_where("BEUMC_S1")
+    vri_bem_tbl, tmp_ue, eco_where
   ))
 
-  # ── 6. UPDATE: decile 2 ecosystem fields ─────────────────────────────────
-  DBI::dbExecute(conn, sprintf(
-    "UPDATE %s SET
-       REALM_2            = u.REALM,
-       GROUP_2            = u.GROUP_C,
-       CLASS_2            = u.CLASS,
-       KIND_2             = u.KIND,
-       FORESTED_2         = u.FORESTED_YN,
-       STS_CLIMAX_2       = u.STRCT_CLIMAX_C,
-       STAND_CLIMAX_2     = u.STAND_CLIMAX_C,
-       STAND_2_Age_0_15   = u.SA_0_15,
-       STAND_2_Age_16_30  = u.SA_16_30,
-       STAND_2_Age_31_50  = u.SA_31_50,
-       STAND_2_Age_51_80  = u.SA_51_80,
-       STAND_2_Age_gt_80  = u.SA_GT_80,
-       STS_2_Age_0_3      = u.STA_0_3,
-       STS_2_Age_4_10     = u.STA_4_10,
-       STS_2_Age_11_30    = u.STA_11_30,
-       STS_2_Age_31_40    = u.STA_31_40,
-       STS_2_Age_41_60    = u.STA_41_60,
-       STS_2_Age_61_80    = u.STA_61_80,
-       STS_2_Age_81_139   = u.STA_81_139,
-       STS_2_Age_140_249  = u.STA_140_249,
-       STS_2_Age_gt_249   = u.STA_GT_249
-     FROM %s AS u
-     WHERE %s",
-    v, tmp_ue, eco_where("BEUMC_S2")
-  ))
-
-  # ── 7. UPDATE: decile 3 ecosystem fields ─────────────────────────────────
-  DBI::dbExecute(conn, sprintf(
-    "UPDATE %s SET
-       REALM_3            = u.REALM,
-       GROUP_3            = u.GROUP_C,
-       CLASS_3            = u.CLASS,
-       KIND_3             = u.KIND,
-       FORESTED_3         = u.FORESTED_YN,
-       STS_CLIMAX_3       = u.STRCT_CLIMAX_C,
-       STAND_CLIMAX_3     = u.STAND_CLIMAX_C,
-       STAND_3_Age_0_15   = u.SA_0_15,
-       STAND_3_Age_16_30  = u.SA_16_30,
-       STAND_3_Age_31_50  = u.SA_31_50,
-       STAND_3_Age_51_80  = u.SA_51_80,
-       STAND_3_Age_gt_80  = u.SA_GT_80,
-       STS_3_Age_0_3      = u.STA_0_3,
-       STS_3_Age_4_10     = u.STA_4_10,
-       STS_3_Age_11_30    = u.STA_11_30,
-       STS_3_Age_31_40    = u.STA_31_40,
-       STS_3_Age_41_60    = u.STA_41_60,
-       STS_3_Age_61_80    = u.STA_61_80,
-       STS_3_Age_81_139   = u.STA_81_139,
-       STS_3_Age_140_249  = u.STA_140_249,
-       STS_3_Age_gt_249   = u.STA_GT_249
-     FROM %s AS u
-     WHERE %s",
-    v, tmp_ue, eco_where("BEUMC_S3")
-  ))
-
-  # ── 8. STD_VRI (add_std_crown_fields — species percentage logic) ──────────
+  # ── 6. STD_VRI (add_std_crown_fields — species percentage logic) ──────────
   existing_cols <- toupper(DBI::dbGetQuery(
     conn, sprintf("PRAGMA table_info('%s')", v)
   )$name)
 
   if (all(c("SPEC_CD_1", "SPEC_PCT_1") %in% existing_cols)) {
-    b_sp <- paste0(
-      "'",
-      paste(c("D","DR","DG","DM","U","UP","A","AC","ACB","ACT","AX","AT",
-              "R","RA","E","EA","EXP","EP","EW","G","GP","M","MB","MV",
-              "Q","QG","XH","V","VB","VP","W","WS","WA","WB","WD","WP",
-              "WT","ZH"),
-            collapse = "','"),
-      "'"
-    )
+   
+    b_sp <- "'D','DR','DG','DM','U','UP','A','AC','ACB','ACT','AX','AT','R','RA','E','EA','EXP','EP','EW','G','GP','M','MB','MV','Q','QG','XH','V','VB','VP','W','WS','WA','WB','WD','WP','WT','ZH'"
 
-    pct_term <- function(cd, pct) {
-      sprintf(
-        "COALESCE(CASE WHEN %s IN (%s) THEN TRY_CAST(%s AS DOUBLE) ELSE 0.0 END, 0.0)",
-        cd, b_sp, pct
+    tot <- paste0(
+        "COALESCE(CASE WHEN SPEC_CD_1 IN (", b_sp, ") THEN TRY_CAST(SPEC_PCT_1 AS DOUBLE) ELSE 0.0 END, 0.0) + 
+         COALESCE(CASE WHEN SPEC_CD_2 IN (", b_sp, ") THEN TRY_CAST(SPEC_PCT_2 AS DOUBLE) ELSE 0.0 END, 0.0) +
+         COALESCE(CASE WHEN SPEC_CD_3 IN (", b_sp, ") THEN TRY_CAST(SPEC_PCT_3 AS DOUBLE) ELSE 0.0 END, 0.0) +
+         COALESCE(CASE WHEN SPEC_CD_4 IN (", b_sp, ") THEN TRY_CAST(SPEC_PCT_4 AS DOUBLE) ELSE 0.0 END, 0.0) +
+         COALESCE(CASE WHEN SPEC_CD_5 IN (", b_sp, ") THEN TRY_CAST(SPEC_PCT_5 AS DOUBLE) ELSE 0.0 END, 0.0) +
+         COALESCE(CASE WHEN SPEC_CD_6 IN (", b_sp, ") THEN TRY_CAST(SPEC_PCT_6 AS DOUBLE) ELSE 0.0 END, 0.0)"
       )
-    }
-
-    tot <- paste(
-      mapply(
-        function(i) pct_term(
-          sprintf("SPEC_CD_%d", i),
-          sprintf("SPEC_PCT_%d", i)
-        ),
-        1:6
-      ),
-      collapse = " + "
-    )
-
+    
     DBI::dbExecute(conn, sprintf(
-      "UPDATE %s SET STD_VRI = CASE
+      "UPDATE %s 
+       SET STD_VRI = CASE
          WHEN (%s) < 25 THEN 'C'
          WHEN (%s) < 75 THEN 'M'
          ELSE 'B'
        END",
-      v, tot, tot
+      vri_bem_tbl, tot, tot
     ))
-  }
+}
 
-  # ── 9. CROWN_ALL (add_std_crown_fields — crown closure logic) ────────────
+  # ── 7. CROWN_ALL (add_std_crown_fields — crown closure logic) ────────────
   if ("CR_CLOSURE" %in% existing_cols) {
     DBI::dbExecute(conn, sprintf(
-      "UPDATE %s SET CROWN_ALL = CASE
+      "UPDATE %s 
+      SET CROWN_ALL = CASE
          WHEN TRY_CAST(CR_CLOSURE AS DOUBLE) <= 25 THEN 'VL-L'
          WHEN TRY_CAST(CR_CLOSURE AS DOUBLE) <= 40 THEN 'M'
          WHEN TRY_CAST(CR_CLOSURE AS DOUBLE) <= 60 THEN 'H'
          WHEN TRY_CAST(CR_CLOSURE AS DOUBLE) >  60 THEN 'VH'
          ELSE NULL
        END",
-      v
+      vri_bem_tbl
     ))
   }
 
-  # ── 10. parkland_ind ──────────────────────────────────────────────────────
+  # ── 8. parkland_ind ──────────────────────────────────────────────────────
   DBI::dbExecute(conn, sprintf(
     "UPDATE %s SET parkland_ind = (RIGHT(BGC_SUBZON, 1) = 'p')",
-    v
+    vri_bem_tbl
   ))
 
   # ── 11. Per-decile: STAND_AGE, STS_AGE, STRCT_S, STAND_A ─────────────────
   has_bclcs <- all(c("BCLCS_LV_2", "BCLCS_LV_3", "BCLCS_LV_4") %in% existing_cols)
 
-  stand_age_sql <- function(stand_pfx) {
-    sprintf(
-      "CASE
-         WHEN VRI_AGE_CL_STD <= 15 THEN %s_Age_0_15
-         WHEN VRI_AGE_CL_STD <= 30 THEN %s_Age_16_30
-         WHEN VRI_AGE_CL_STD <= 50 THEN %s_Age_31_50
-         WHEN VRI_AGE_CL_STD <= 80 THEN %s_Age_51_80
-         WHEN VRI_AGE_CL_STD >  80 THEN %s_Age_gt_80
+  stand_age_sql <- "CASE
+         WHEN VRI_AGE_CL_STD <= 15 THEN STAND_1_Age_0_15
+         WHEN VRI_AGE_CL_STD <= 30 THEN STAND_1_Age_16_30
+         WHEN VRI_AGE_CL_STD <= 50 THEN STAND_1_Age_31_50
+         WHEN VRI_AGE_CL_STD <= 80 THEN STAND_1_Age_51_80
+         WHEN VRI_AGE_CL_STD >  80 THEN STAND_1_Age_gt_80
          ELSE NULL
-       END",
-      stand_pfx, stand_pfx, stand_pfx, stand_pfx, stand_pfx
-    )
-  }
+       END"
 
-  sts_age_sql <- function(sts_pfx) {
-    sprintf(
-      "CASE
-         WHEN VRI_AGE_CL_STS <=   3 THEN %s_Age_0_3
-         WHEN VRI_AGE_CL_STS <=  10 THEN %s_Age_4_10
-         WHEN VRI_AGE_CL_STS <=  30 THEN %s_Age_11_30
-         WHEN VRI_AGE_CL_STS <=  40 THEN %s_Age_31_40
-         WHEN VRI_AGE_CL_STS <=  60 THEN %s_Age_41_60
-         WHEN VRI_AGE_CL_STS <=  80 THEN %s_Age_61_80
-         WHEN VRI_AGE_CL_STS <= 139 THEN %s_Age_81_139
-         WHEN VRI_AGE_CL_STS <= 249 THEN %s_Age_140_249
-         WHEN VRI_AGE_CL_STS >  249 THEN %s_Age_gt_249
+  sts_age_sql <- "CASE
+         WHEN VRI_AGE_CL_STS <=   3 THEN STS_1_Age_0_3
+         WHEN VRI_AGE_CL_STS <=  10 THEN STS_1_Age_4_10
+         WHEN VRI_AGE_CL_STS <=  30 THEN STS_1_Age_11_30
+         WHEN VRI_AGE_CL_STS <=  40 THEN STS_1_Age_31_40
+         WHEN VRI_AGE_CL_STS <=  60 THEN STS_1_Age_41_60
+         WHEN VRI_AGE_CL_STS <=  80 THEN STS_1_Age_61_80
+         WHEN VRI_AGE_CL_STS <= 139 THEN STS_1_Age_81_139
+         WHEN VRI_AGE_CL_STS <= 249 THEN STS_1_Age_140_249
+         WHEN VRI_AGE_CL_STS >  249 THEN STS_1_Age_gt_249
          ELSE NULL
-       END",
-      sts_pfx, sts_pfx, sts_pfx, sts_pfx, sts_pfx,
-      sts_pfx, sts_pfx, sts_pfx, sts_pfx
-    )
-  }
+       END"
 
-  for (i in seq_len(3L)) {
-    stand_pfx  <- sprintf("STAND_%d", i)
-    sts_pfx    <- sprintf("STS_%d",   i)
-    forested   <- sprintf("FORESTED_%d",     i)
-    sts_clx    <- sprintf("STS_CLIMAX_%d",   i)
-    stand_clx  <- sprintf("STAND_CLIMAX_%d", i)
-    stand_age  <- sprintf("STAND_AGE_%d",    i)
-    sts_age    <- sprintf("STS_AGE_%d",      i)
-    strct_s    <- sprintf("STRCT_S%d",       i)
-    stand_a    <- sprintf("STAND_A%d",       i)
-    beumc      <- sprintf("BEUMC_S%d",       i)
-
-    # -- STAND_AGE and STS_AGE lookups
+  # -- STAND_AGE and STS_AGE lookups
     DBI::dbExecute(conn, sprintf(
       "UPDATE %s SET
-         %s = %s,
-         %s = %s",
-      v,
-      stand_age, stand_age_sql(stand_pfx),
-      sts_age,   sts_age_sql(sts_pfx)
+         STAND_AGE_1 = %s,
+         STS_AGE_1 = %s",
+      vri_bem_tbl,
+      stand_age_sql,
+      sts_age_sql
     ))
-
-    # -- STRCT_S: STS_AGE when forested age exists, else STS_CLIMAX
+  
+  # -- STRCT_S: STS_AGE when forested age exists, else STS_CLIMAX
     DBI::dbExecute(conn, sprintf(
-      "UPDATE %s SET %s = CASE
-         WHEN VRI_AGE_CL_STS > 0               THEN %s
-         WHEN %s = 'N' OR parkland_ind          THEN %s
+      "UPDATE %s SET STRCT_S1 = CASE
+         WHEN VRI_AGE_CL_STS > 0 THEN STS_AGE_1
+         WHEN FORESTED_1 = 'N' OR parkland_ind THEN STS_CLIMAX_1
          ELSE NULL
        END",
-      v, strct_s, sts_age, forested, sts_clx
-    ))
-
-    # -- WL shrub-wetland correction
+      vri_bem_tbl)
+    )
+  
+  # -- WL shrub-wetland correction
     if (has_bclcs) {
       DBI::dbExecute(conn, sprintf(
-        "UPDATE %s SET %s = '2'
-         WHERE %s = 'WL'
+        "UPDATE %s SET STRCT_S1 = '2'
+         WHERE BEUMC_S1 = 'WL'
            AND BCLCS_LV_2 <> 'W'
            AND BCLCS_LV_3 = 'W'
            AND BCLCS_LV_4 IN ('HE','HF','HG')",
-        v, strct_s, beumc
+        vri_bem_tbl
       ))
     }
-
-    # -- STAND_A: combined CASE for STRCT prefix < 4 and >= 4
+  
+  # -- STAND_A: combined CASE for STRCT prefix < 4 and >= 4
     DBI::dbExecute(conn, sprintf(
-      "UPDATE %s SET %s = CASE
-         WHEN LEFT(%s, 1) IN ('4','5','6','7') THEN
+      "UPDATE %s 
+       SET STAND_A1 = CASE
+         WHEN LEFT(STRCT_S1, 1) IN ('4','5','6','7') THEN
            CASE
              WHEN STD_VRI IS NOT NULL                THEN STD_VRI
-             WHEN VRI_AGE_CL_STD > 0                THEN %s
-             WHEN %s = 'N' OR parkland_ind           THEN %s
+             WHEN VRI_AGE_CL_STD > 0                THEN STAND_AGE_1
+             WHEN FORESTED_1 = 'N' OR parkland_ind   THEN STAND_CLIMAX_1
              ELSE NULL
            END
-         WHEN LEFT(%s, 1) IS NULL
-           OR LEFT(%s, 1) IN ('1','2','3') THEN
+         WHEN LEFT(STRCT_S1, 1) IS NULL
+           OR LEFT(STRCT_S1, 1) IN ('1','2','3') THEN
            CASE
-             WHEN VRI_AGE_CL_STD > 0                THEN %s
-             WHEN %s = 'N' OR parkland_ind           THEN %s
+             WHEN VRI_AGE_CL_STD > 0                THEN STAND_AGE_1
+             WHEN FORESTED_1 = 'N' OR parkland_ind   THEN STAND_CLIMAX_1
              ELSE NULL
            END
          ELSE NULL
        END",
-      v, stand_a,
-      strct_s,
-        stand_age, forested, stand_clx,
-      strct_s,
-      strct_s,
-        stand_age, forested, stand_clx
+      vri_bem_tbl
     ))
-  }
-
+  
   invisible(vri_bem_tbl)
 }

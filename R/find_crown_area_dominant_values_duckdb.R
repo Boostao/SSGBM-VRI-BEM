@@ -49,7 +49,7 @@ find_crown_area_dominant_values_duckdb <- function(conn, vri_bem_tbl) {
          WHEN %s = 'Y' AND LEFT(%s, 1) IN ('4','5','6','7') THEN CROWN_ALL
          ELSE NULL
         END;",
-      v, col, forested, strct
+      vri_bem_tbl, col, forested, strct
     ))
   }
 

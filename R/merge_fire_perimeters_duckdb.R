@@ -12,7 +12,7 @@
 #'
 #' @param conn A `duckdb_connection` object (as returned by [init_conn()]).
 #' @param vri_bem_tbl Character. Name of the VRI-BEM table to modify in-place.
-#'   Default `"VRIBEM_CCB"`.
+#'   Default `"VRIBEM_FDL"`.
 #' @param fire_tbl Character. Name of the fire perimeters table/view in `conn`.
 #'   Must contain a `Shape` geometry column and a `FIRE_YEAR` integer column.
 #'   Default `"V_FIRE"`.
@@ -35,7 +35,7 @@
 #' @import duckdb
 #' @export
 merge_fire_perimeters_duckdb <- function(conn,
-                                         vri_bem_tbl = "VRIBEM_CCB",
+                                         vri_bem_tbl = "VRIBEM_FDL",
                                          fire_tbl    = "V_FIRE") {
 
   stopifnot(inherits(conn, "duckdb_connection"))

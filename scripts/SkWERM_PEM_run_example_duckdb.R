@@ -188,7 +188,7 @@ Moose_SkWERM <- merge_rrm_on_vri_duckdb(conn, vri_bem_tbl = "VRIBEM_FDL", rrm_dt
 #Moose_SkWERM <- merge_rrm_on_vri(vri_bem=vri_bem, rrm_dt=moose_export_dt, animal="moose")
 
 #Check for mismatches
-check <- DBI::dbGetQuery(conn, "SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC_S1, BEUMC_S2, BEUMC_S3, SLOPE_MOD, SITE_M3A, SNOW_CODE, ABOVE_ELEV_THOLD, CROWN_ALL_1, CROWN_ALL_2, CROWN_ALL_3, STRCT_S1, STAND_A1 FROM SkWERM_MOOSE WHERE rrm_merge_ind = FALSE") 
+check <- DBI::dbGetQuery(conn, "SELECT BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC, SLOPE_MOD, SITE_M3A, SNOW_CODE, ABOVE_ELEV_THOLD, CROWN_ALL, STRCT_S, STAND_A FROM SkWERM_MOOSE WHERE rrm_merge_ind = FALSE") 
 
 #Mismatches should only be for missing LUT ecosystems. If there are more than that, double check process
 if(nrow(check)>0){
@@ -253,7 +253,7 @@ data.table::set(bear_export_dt, j = "MURAR_HI_RSI", value = MURAR_HI_6C[[1]]$VAL
 SkWERM_VRI_BEM_WHR <- merge_rrm_on_vri(vri_bem=Moose_SkWERM, rrm_dt=bear_export_dt, animal="bear")
 
 check <- filter(SkWERM_VRI_BEM_WHR,rrm_merge_ind == "FALSE") %>%
-  dplyr::select(BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC_S1, BEUMC_S2, BEUMC_S3, SLOPE_MOD, SITE_M3A, SNOW_CODE, ABOVE_ELEV_THOLD, CROWN_ALL_1, CROWN_ALL_2, CROWN_ALL_3, STRCT_S1, STAND_A1)
+  dplyr::select(BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC, SLOPE_MOD, SITE_M3A, SNOW_CODE, ABOVE_ELEV_THOLD, CROWN_ALL, STRCT_S, STAND_A)
 
 if(nrow(check)>0){
   print("RRM output was not fully merged with spatial map. Check to see which variables did not match up. Mismatching values are only expected for missing LUT fields.")

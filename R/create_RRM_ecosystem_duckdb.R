@@ -4,56 +4,63 @@
 # (area = 0) covering the full age-class range.
 .rrm_union_sql <- function(v, salmon = FALSE) {
 
-  sal_sel <- if (salmon) "Salmon, " else ""
+  salmon_sel <- if (salmon) "Salmon, " else ""
 
   # 11 (STRCT template, STAND template) pairs; %d → decile index
-  proj_pairs <- list(
-    list("STS_%d_Age_0_3",    "STAND_%d_Age_0_15"),
-    list("STS_%d_Age_4_10",   "STAND_%d_Age_0_15"),
-    list("STS_%d_Age_11_30",  "STAND_%d_Age_0_15"),
-    list("STS_%d_Age_11_30",  "STAND_%d_Age_16_30"),
-    list("STS_%d_Age_31_40",  "STAND_%d_Age_31_50"),
-    list("STS_%d_Age_41_60",  "STAND_%d_Age_31_50"),
-    list("STS_%d_Age_41_60",  "STAND_%d_Age_51_80"),
-    list("STS_%d_Age_61_80",  "STAND_%d_Age_51_80"),
-    list("STS_%d_Age_81_139", "STAND_%d_Age_gt_80"),
-    list("STS_%d_Age_140_249","STAND_%d_Age_gt_80"),
-    list("STS_%d_Age_gt_249", "STAND_%d_Age_gt_80")
-  )
+  
+  proj_pairs <- rbindlist(list(
+    list(STS="STS_1_Age_0_3",    STD="STAND_1_Age_0_15"),
+    list(STS="STS_1_Age_4_10",   STD="STAND_1_Age_0_15"),
+    list(STS="STS_1_Age_11_30",  STD="STAND_1_Age_0_15"),
+    list(STS="STS_1_Age_11_30",  STD="STAND_1_Age_16_30"),
+    list(STS="STS_1_Age_31_40",  STD="STAND_1_Age_31_50"),
+    list(STS="STS_1_Age_41_60",  STD="STAND_1_Age_31_50"),
+    list(STS="STS_1_Age_41_60",  STD="STAND_1_Age_51_80"),
+    list(STS="STS_1_Age_61_80",  STD="STAND_1_Age_51_80"),
+    list(STS="STS_1_Age_81_139", STD="STAND_1_Age_gt_80"),
+    list(STS="STS_1_Age_140_249",STD="STAND_1_Age_gt_80"),
+    list(STS="STS_1_Age_gt_249", STD="STAND_1_Age_gt_80")
+  ))
 
   one_part <- function(i, strct_col, stand_col, area_expr, proj_val) {
     sprintf(
       "SELECT ECO_SEC, BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE,
-              BEUMC_S%d AS BEUMC, SLOPE_MOD, SITE_M3A, %sSNOW_CODE,
-              ABOVE_ELEV_THOLD, CROWN_ALL_%d AS CROWN_ALL,
-              %s AS STRCT, %s AS STAND, FORESTED_%d AS FORESTED,
-              CAST(%s AS DOUBLE) AS area_sum, %s AS projection
+              BEUMC_S1 AS BEUMC, SLOPE_MOD, SITE_M3A, %s SNOW_CODE,
+              ABOVE_ELEV_THOLD, CROWN_ALL,
+              STRCT_S1 AS STRCT, STAND_A1 AS STAND, FORESTED_1 AS FORESTED,
+              CAST(ST_Area(Shape) AS DOUBLE) AS area_sum, FALSE AS projection
        FROM %s
-       WHERE SDEC_%d > 0 AND BEUMC_S%d IS NOT NULL AND FORESTED_%d IS NOT NULL",
-      i, sal_sel, i,
-      strct_col, stand_col, i,
-      area_expr, proj_val,
-      v, i, i, i
+       WHERE SDEC_1 > 0 AND BEUMC_S1 IS NOT NULL AND FORESTED_1 IS NOT NULL",
+      salmon_sel, 
+      v
     )
   }
 
-  parts <- character(0L)
-  for (i in 1:3) {
-    # Actual decile row (real area)
-    parts <- c(parts, one_part(
-      i, sprintf("STRCT_S%d", i), sprintf("STAND_A%d", i),
-      sprintf("ST_Area(Shape) * CAST(SDEC_%d AS DOUBLE) / 10.0", i),
-      "FALSE"
-    ))
-    # 11 projected age-class rows (area = 0)
-    for (pp in proj_pairs) {
-      parts <- c(parts, one_part(
-        i, sprintf(pp[[1]], i), sprintf(pp[[2]], i), "0.0", "TRUE"
-      ))
-    }
-  }
-
-  paste(parts, collapse = "\nUNION ALL\n")
+  
+  # Actual
+    actual_query <- sprintf(
+      "SELECT ECO_SEC, BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE,
+              BEUMC_S1 AS BEUMC, SLOPE_MOD, SITE_M3A, %s SNOW_CODE,
+              ABOVE_ELEV_THOLD, CROWN_ALL,
+              STRCT_S1 AS STRCT, STAND_A1 AS STAND, FORESTED_1 AS FORESTED,
+              CAST(ST_Area(Shape) AS DOUBLE) AS area_sum, FALSE AS projection
+       FROM %s
+       WHERE SDEC_1 > 0 AND BEUMC_S1 IS NOT NULL AND FORESTED_1 IS NOT NULL",
+      salmon_sel, 
+      v
+    )
+  
+  proj_query <- paste0(
+    "SELECT ECO_SEC, BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE,
+              BEUMC_S1 AS BEUMC, SLOPE_MOD, SITE_M3A, ", salmon_sel, " SNOW_CODE,
+              ABOVE_ELEV_THOLD, CROWN_ALL,
+              ", proj_pairs$STS," AS STRCT, ", proj_pairs$STD," AS STAND, FORESTED_1 AS FORESTED,
+              CAST(0.0 AS DOUBLE)AS area_sum, TRUE AS projection
+       FROM ", v, "
+       WHERE BEUMC_S1 IS NOT NULL AND FORESTED_1 IS NOT NULL"
+    )
+  paste(c(actual_query, proj_query), collapse = "\nUNION ALL\n")
+  
 }
 
 
@@ -66,34 +73,25 @@
   union_sql <- .rrm_union_sql(v, salmon = salmon)
 
   # Group-by key columns (ordered to match the R source)
-  gc_fixed <- c("ECO_SEC", "BGC_ZONE", "BGC_SUBZON", "BGC_VRT", "BGC_PHASE",
-                "BEUMC", "SLOPE_MOD", "SITE_M3A")
-  if (salmon) gc_fixed <- c(gc_fixed, "Salmon")
-  gc_fixed <- c(gc_fixed, "SNOW_CODE", "ABOVE_ELEV_THOLD", "CROWN_ALL")
+  gc_fixed <- ifelse(salmon, 
+                     "ECO_SEC, BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC, SLOPE_MOD, SITE_M3A, Salmon, SNOW_CODE, ABOVE_ELEV_THOLD, CROWN_ALL",
+                     "ECO_SEC, BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, BEUMC, SLOPE_MOD, SITE_M3A, SNOW_CODE, ABOVE_ELEV_THOLD, CROWN_ALL")
 
-  gc_all      <- c(gc_fixed, "STRCT", "STAND", "FORESTED")
-  gc_no_stand <- c(gc_fixed, "STRCT", "FORESTED")
-
-  gc_all_str      <- paste(gc_all, collapse = ", ")
-  gc_no_stand_str <- paste(gc_no_stand, collapse = ", ")
-
-  inner_sel <- paste(
-    c(gc_no_stand_str,
-      "CASE WHEN projection AND STAND IN ('B','C','M')
-                  AND STRCT NOT IN ('4','5','6','7')
-             THEN NULL ELSE STAND END AS STAND",
-      "area_sum"),
-    collapse = ",\n             "
-  )
+  gc_all_str      <- sprintf("%s, STRCT, STAND, FORESTED", gc_fixed)
+  gc_no_stand_str <- sprintf("%s, STRCT, FORESTED", gc_fixed)
 
   sql <- sprintf(
     "SELECT %s, SUM(area_sum) / 10000.0 AS Hectares
      FROM (
-       SELECT %s
+       SELECT %s, 
+        CASE WHEN projection AND STAND IN ('B','C','M')
+                  AND STRCT NOT IN ('4','5','6','7')
+             THEN NULL ELSE STAND END AS STAND,
+        area_sum
        FROM ( %s ) AS raw
      ) AS corrected
      GROUP BY %s",
-    gc_all_str, inner_sel, union_sql, gc_all_str
+    gc_all_str, gc_no_stand_str, union_sql, gc_all_str
   )
 
   DBI::dbGetQuery(conn, sql)
@@ -178,35 +176,20 @@ create_RRM_ecosystem_huckleberry_duckdb <- function(conn, vri_bem_tbl) {
   stopifnot(DBI::dbIsValid(conn))
   stopifnot(is.character(vri_bem_tbl), nchar(vri_bem_tbl) > 0L)
 
-  v <- vri_bem_tbl
-
-  gc <- c("ECO_SEC", "BGC_ZONE", "BGC_SUBZON", "BGC_VRT", "BGC_PHASE",
-          "HUCK_ASP", "HUCK_ELEV_Thold", "CROWN_ALL", "STRCT", "STAND",
-          "FORESTED")
-  gc_str <- paste(gc, collapse = ", ")
-
-  part <- function(i) {
-    sprintf(
-      "SELECT ECO_SEC, BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE,
-              HUCK_ASP, HUCK_ELEV_Thold,
-              CROWN_ALL_%d AS CROWN_ALL,
-              STRCT_S%d AS STRCT, STAND_A%d AS STAND,
-              FORESTED_%d AS FORESTED,
-              ST_Area(Shape) * CAST(SDEC_%d AS DOUBLE) / 10.0 AS area_sum
-       FROM %s
-       WHERE SDEC_%d > 0 AND BEUMC_S%d IS NOT NULL AND FORESTED_%d IS NOT NULL",
-      i, i, i, i, i,
-      v, i, i, i
-    )
-  }
-
-  union_sql <- paste(sapply(1:3, part), collapse = "\nUNION ALL\n")
+  gc_str <- "ECO_SEC, BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE, HUCK_ASP, HUCK_ELEV_Thold, CROWN_ALL, STRCT, STAND, FORESTED"
 
   sql <- sprintf(
     "SELECT %s, SUM(area_sum) / 10000.0 AS Hectares
-     FROM ( %s ) AS raw
+     FROM ( SELECT ECO_SEC, BGC_ZONE, BGC_SUBZON, BGC_VRT, BGC_PHASE,
+              HUCK_ASP, HUCK_ELEV_Thold,
+              CROWN_ALL AS CROWN_ALL,
+              STRCT_S1 AS STRCT, STAND_A1 AS STAND,
+              FORESTED_1 AS FORESTED,
+              ST_Area(Shape) AS area_sum
+           FROM %s
+           WHERE SDEC_1 > 0 AND BEUMC_S1 IS NOT NULL AND FORESTED_1 IS NOT NULL ) AS raw
      GROUP BY %s",
-    gc_str, union_sql, gc_str
+    gc_str, vri_bem_tbl, gc_str
   )
 
   DBI::dbGetQuery(conn, sql)
