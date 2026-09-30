@@ -123,7 +123,7 @@ DBI::dbExecute(conn, "
 # We will merge CCB instead of FDL since FDL is not available to us.
 merge_geometry_duckdb(conn = conn,
   x_tbl = "VRIBEM",
-  y_tbl = "V_FDL",  #TODO Create table V_FDL or a mock in duckdb
+  y_tbl = "V_FDL",
   tolerance_m2 = 10,
   result_tbl = "VRIBEM_FDL")
 
