@@ -72,7 +72,7 @@ correct_small_lakes_duckdb <- function(conn,
     )
     if (!identical(result_tbl, vri_bem_tbl)) {
       DBI::dbExecute(conn, sprintf(
-        "CREATE OR REPLACE TEMP TABLE %s AS SELECT * FROM %s;",
+        "CREATE OR REPLACE TABLE %s AS SELECT * FROM %s;",
         result_tbl, vri_bem_tbl
       ))
     }
@@ -300,7 +300,7 @@ correct_small_lakes_duckdb <- function(conn,
     logger::log_info("correct_small_lakes_duckdb: no non-lake rows intersect lakes. Skipping.")
     if (!identical(result_tbl, vri_bem_tbl)) {
       DBI::dbExecute(conn, sprintf(
-        "CREATE OR REPLACE TEMP TABLE %s AS SELECT * FROM %s;",
+        "CREATE OR REPLACE TABLE %s AS SELECT * FROM %s;",
         result_tbl, vri_bem_tbl
       ))
     }
@@ -411,10 +411,9 @@ correct_small_lakes_duckdb <- function(conn,
   # 4.  Assemble result: intersection + difference + pass-through
   # ------------------------------------------------------------------
   t1 <- proc.time()[["elapsed"]]
-  try(DBI::dbExecute(conn, sprintf("DROP VIEW IF EXISTS %s;", result_tbl)), silent = TRUE)
 
   DBI::dbExecute(conn, sprintf(
-    "CREATE OR REPLACE TEMP TABLE %s AS
+    "CREATE OR REPLACE TABLE %s AS
      SELECT %s FROM %s
      UNION ALL
      SELECT * FROM %s

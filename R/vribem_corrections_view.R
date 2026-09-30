@@ -19,7 +19,7 @@ vribem_corrections_view <- function(conn, vri_bem_tbl = "V_VRIBEM", beu_bec, cle
                                                  "COV_PCT_1", "LBL_VEGCOV", "Area_Ha", "BGC_ZONE", "BGC_SUBZON",
                                                  "SPEC_PCT_1"))
 
-  DBI::dbExecute(conn, sprintf("CREATE OR REPLACE TEMP TABLE %s AS (SELECT vri_bem.* FROM %s vri_bem);", result_tbl, vri_bem_tbl))
+  DBI::dbExecute(conn, sprintf("CREATE OR REPLACE TABLE %s AS (SELECT vri_bem.* FROM %s vri_bem);", result_tbl, vri_bem_tbl))
   
   add_col_to_tbl(conn, tbl_name = result_tbl, col = "lbl_edit", type = "VARCHAR DEFAULT ''")
   add_col_to_tbl(conn, tbl_name = result_tbl, col = "DEC_Total", type = "INTEGER DEFAULT 0")

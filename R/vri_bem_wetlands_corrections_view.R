@@ -50,7 +50,7 @@ vri_bem_wetlands_corrections_view <- function(conn, vri_bem = "VRIBEM_CORRECTION
   }
 
   DBI::dbExecute(conn, sprintf("
-    CREATE OR REPLACE TEMP TABLE %s AS (
+    CREATE OR REPLACE TABLE %s AS (
       WITH vri_bem AS (SELECT *, ROW_NUMBER() OVER (ORDER BY TEIS_ID, FEATURE_ID) AS row_id FROM %s)           
       SELECT vri_bem.*, 
         wl.Area_wetland,
