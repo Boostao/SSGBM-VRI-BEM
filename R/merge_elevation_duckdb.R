@@ -127,15 +127,26 @@ merge_elevation_duckdb <- function(conn,
   rasterize_batch_size <- as.integer(rasterize_batch_size)
 
   # Materialize the view into a temp table so rowid is stable and we
-  # only evaluate the view chain once.
-  n_poly <- DBI::dbGetQuery(conn, sprintf("SELECT count(*) AS n FROM %s;", vri_bem_tbl))$n
+  # only evaluate the view chain once. Sanitize geometry here so the
+  # WKB export only contains polygonal features terra can rasterize.
   DBI::dbExecute(conn, "DROP TABLE IF EXISTS _elev_vri_tmp;")
   DBI::dbExecute(conn, sprintf(
     "CREATE TEMP TABLE _elev_vri_tmp AS
-     SELECT row_number() OVER () AS raster_row_id, rowid AS src_row_id, Shape
-     FROM %s;",
+     WITH sanitized AS (
+       SELECT
+         rowid AS src_row_id,
+         ST_CollectionExtract(ST_MakeValid(Shape), 3) AS Shape
+       FROM %s
+     )
+     SELECT
+       row_number() OVER () AS raster_row_id,
+       src_row_id,
+       Shape
+     FROM sanitized
+     WHERE NOT ST_IsEmpty(Shape);",
     vri_bem_tbl
   ))
+  n_poly <- DBI::dbGetQuery(conn, "SELECT count(*) AS n FROM _elev_vri_tmp;")$n
   materialize_secs <- round(proc.time()[["elapsed"]] - t0, 1)
   logger::log_info(sprintf(
     "merge_elevation_duckdb: %d polygons materialized (%.1fs)",
@@ -283,7 +294,7 @@ merge_elevation_duckdb <- function(conn,
   )
 
   sql_result <- sprintf(
-    "CREATE OR REPLACE TEMP TABLE %s AS
+    "CREATE OR REPLACE TABLE %s AS
     WITH stats AS (
       SELECT
         CAST(row_id AS INTEGER)                                           AS row_id,

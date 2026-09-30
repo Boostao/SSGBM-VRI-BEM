@@ -27,7 +27,7 @@ create_unique_ecosystem_dt <- function(conn, vri_bem, current_unique_ecosystem_c
         FROM ", vri_bem, " 
         WHERE SDEC_1 > 0 AND (PEM_PRED_CLASS IS NULL OR PEM_PRED_CLASS = 'non-forested') 
         UNION ALL
-        SELECT VRI_BEC_ZONE AS BGC_ZONE, VRI_BEC_SUBZON AS BGC_SUBZON, VRI_BEC_VRT AS BGC_VRT, VRI_BEC_PHAS AS BGC_PHASE, PEM_PRED_CLASS AS BEU_MC
+        SELECT VRI_BEC_ZONE AS BGC_ZONE, VRI_BEC_SUBZON AS BGC_SUBZON, VRI_BEC_VRT AS BGC_VRT, VRI_BEC_PHASE AS BGC_PHASE, PEM_PRED_CLASS AS BEU_MC
         FROM VRI_AND_PEM
         WHERE PEM_PRED_CLASS != 'non-forested'
       ) AS sq

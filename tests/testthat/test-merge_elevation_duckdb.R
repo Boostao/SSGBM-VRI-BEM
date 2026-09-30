@@ -163,6 +163,30 @@ test_that("merge_elevation_duckdb aggregates MEAN_TRI", {
   DBI::dbDisconnect(conn, shutdown = TRUE)
 })
 
+test_that("merge_elevation_duckdb extracts polygonal parts from geometry collections", {
+  conn    <- make_test_conn()
+  rasters <- make_uniform_raster(elev_val = 1600, tri_val = 12.5)
+
+  DBI::dbExecute(conn, "
+    CREATE OR REPLACE TEMP TABLE VRI_BEM_TEST AS
+    SELECT
+      'AT'::VARCHAR AS BEUMC_S1,
+      NULL::VARCHAR AS BEUMC_S2,
+      NULL::VARCHAR AS BEUMC_S3,
+      'SBS'::VARCHAR AS BGC_ZONE,
+      ST_GeomFromText('GEOMETRYCOLLECTION(
+        POLYGON ((500000 5000000, 500100 5000000, 500100 5000100, 500000 5000100, 500000 5000000)),
+        LINESTRING (500000 5000000, 500100 5000100)
+      )') AS Shape
+  ")
+
+  res <- run_and_fetch(conn, "VRI_BEM_TEST", rasters)
+
+  expect_equal(res$ELEV, 1600)
+  expect_equal(res$MEAN_TRI, 12.5)
+  DBI::dbDisconnect(conn, shutdown = TRUE)
+})
+
 test_that("merge_elevation_raster_on_sf aggregates MEAN_TRI", {
   rasters <- make_uniform_raster(tri_val = 12.5)
   vri_bem <- make_test_sf()

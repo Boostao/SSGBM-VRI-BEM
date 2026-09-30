@@ -13,10 +13,35 @@ connections::connection_view(conn)
 
 #aoi_wkt <- get_aoi_wkt_from_tsa(conn, aoi_name = "Pacific")
 aoi_wkt <- "MULTIPOLYGON (((1065018 932215.1, 941827.7 932215.1, 941827.7 1016988, 1065018 1016988, 1065018 932215.1)))"
+
+pem_bbox <- DBI::dbGetQuery(conn, "
+  SELECT
+    ST_XMin(ext) AS xmin,
+    ST_XMax(ext) AS xmax,
+    ST_YMin(ext) AS ymin,
+    ST_YMax(ext) AS ymax
+  FROM (
+    SELECT ST_Envelope(ST_Union_Agg(ST_MakeValid(Shape))) AS ext
+    FROM PEM
+  ) bbox
+")
+
+aoi_wkt <- with(
+  pem_bbox,
+  sprintf(
+    "POLYGON ((%.1f %.1f, %.1f %.1f, %.1f %.1f, %.1f %.1f, %.1f %.1f))",
+    xmin - 0.10 * (xmax - xmin), ymin + 0.20 * (ymax - ymin),
+    xmin + 0.35 * (xmax - xmin), ymin + 0.20 * (ymax - ymin),
+    xmin + 0.35 * (xmax - xmin), ymin + 0.55 * (ymax - ymin),
+    xmin - 0.10 * (xmax - xmin), ymin + 0.55 * (ymax - ymin),
+    xmin - 0.10 * (xmax - xmin), ymin + 0.20 * (ymax - ymin)
+  )
+)
 #aoi_wkt <- sf::st_read("D:/Boostao/SSGBM-data/Skeena Region Boundary", layer = "Skeena_region")$geometry |> sf::st_transform(3005) |> sf::st_union() |> wk::as_wkt() |> paste0()
 
 filtered_views(conn, aoi_wkt, build_spatial_index = FALSE)
 
+merge_vri_pem_duckdb(conn)
 
 # 1a ----
 vribem_view(conn, validate_intersect = FALSE)
@@ -34,7 +59,7 @@ amend_large_polygons_duckdb(conn,
 # 1b ----
 duckdb::duckdb_read_csv(conn, "beu_bec_corr",  "inst/csv/Allowed_BEC_BEUs_NE_ALL.csv", temporary = TRUE) #TODO update to use system.file on package csv
 
-vribem_corrections_view(conn, vri_bem_tbl = "VRIBEM", beu_bec = "beu_bec_corr")
+vribem_corrections_view(conn, vri_bem_tbl = "V_VRIBEM", beu_bec = "beu_bec_corr", result_tbl = "VRIBEM")
 
 #1c ----
 #Lakes and wetlands

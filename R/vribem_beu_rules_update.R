@@ -129,7 +129,7 @@ import_rules_to_duckdb <- function(conn, rules_xl, tbl_name = "beu_update_rules"
     stop("One empty column named 'OUTPUTS' is expected in the rule file to mark the end of the columns use to create rules and the beginning of the columns use to create outputs")
   }
 
-  duckdb::dbWriteTable(conn, name = tbl_name, value = rules, temporary = TRUE, overwrite = TRUE)
+  duckdb::dbWriteTable(conn, name = tbl_name, value = rules[!is.na(rules$`RULE#`),], temporary = TRUE, overwrite = TRUE)
 }
 
 
